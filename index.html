@@ -473,6 +473,16 @@ hr.div{border:none;border-top:1px solid rgba(255,255,255,.06);margin:18px 0}
       <!-- SEÇÃO IMPORTAR -->
       <section id="sec-imp" class="sec">
         <div class="sec-title">📥 Importar Dados</div>
+        <div class="card mb24">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">💳 GastosCartao — Itaú</div>
+          <div style="font-size:12px;color:var(--t3);margin-bottom:14px;line-height:1.55;">
+            Lê <code style="color:var(--blue);font-family:var(--mono);font-size:11px;">Financeiro/GastosCartao.xlsx</code> (somente leitura), detecta duplicatas comparando com o arquivo de destino e sugere categorias pelas regras configuradas.
+          </div>
+          <div class="flex ai-c gap12" style="flex-wrap:wrap;">
+            <button class="btn btn-p" id="btn-buscar-gc" onclick="iniciarImportGC()">🔄 Buscar Novos Lançamentos</button>
+            <span id="gc-import-status" style="font-size:12px;color:var(--t3);"></span>
+          </div>
+        </div>
         <div class="g2 mb24">
           <div class="card">
             <div style="font-size:13px;font-weight:600;margin-bottom:14px;">📄 Upload CSV</div>
@@ -661,6 +671,38 @@ hr.div{border:none;border-top:1px solid rgba(255,255,255,.06);margin:18px 0}
         <button class="btn btn-s" onclick="nfBackToUpload()">← Voltar</button>
         <button class="btn btn-p" onclick="salvarNF()">✓ Confirmar e Salvar</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: IMPORT GC PREVIEW -->
+<div class="modal-ov" id="imp-ov" onclick="if(event.target===this)fecharImportModal()">
+  <div class="modal modal-lg" style="width:min(860px,100%);">
+    <div class="flex ai-c jb mb16">
+      <div class="modal-title" style="margin:0;">📥 Novos Lançamentos — GastosCartao</div>
+      <span id="imp-summary" class="badge b-blue"></span>
+    </div>
+    <div id="imp-duplicatas" class="alert a-yellow mb16" style="display:none;font-size:12px;"></div>
+    <div class="tbl-wrap" style="max-height:52vh;overflow-y:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Estabelecimento</th>
+            <th style="text-align:right">Valor</th>
+            <th>Cartão</th>
+            <th>Tipo</th>
+            <th>Categoria</th>
+            <th>Subcategoria</th>
+            <th>Conta</th>
+          </tr>
+        </thead>
+        <tbody id="imp-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-s" onclick="fecharImportModal()">Cancelar</button>
+      <button class="btn btn-p" id="imp-confirm-btn" onclick="confirmarImportacao()">✓ Confirmar Importação</button>
     </div>
   </div>
 </div>
@@ -1316,6 +1358,171 @@ function initCatCharts(){
   const c3=document.getElementById('c-bar'),c4=document.getElementById('c-horiz');if(!c3||!c4)return;
   charts['bar']=new Chart(c3,{type:'bar',data:{labels:['Jan','Fev','Mar','Abr','Mai','Jun'],datasets:[{label:'Alimentação',data:[2200,2400,2100,2800,2300,2640],backgroundColor:'rgba(255,69,58,.75)',borderRadius:4},{label:'Lazer',data:[800,950,700,1100,880,921],backgroundColor:'rgba(10,132,255,.75)',borderRadius:4},{label:'Saúde',data:[750,890,800,700,950,925],backgroundColor:'rgba(48,209,88,.75)',borderRadius:4},{label:'Vestuário',data:[300,450,200,500,380,680],backgroundColor:'rgba(255,214,10,.75)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#8e8e93',font:{size:11,family:"'DM Sans',sans-serif"},boxWidth:10,padding:12}}},scales:{x:{ticks:TICK(),grid:GRID()},y:{ticks:{...TICK(),callback:v=>'R$'+v/1000+'k'},grid:GRID()}}}});
   charts['horiz']=new Chart(c4,{type:'bar',data:{labels:CATS_DATA.map(c=>c.ct),datasets:[{data:CATS_DATA.map(c=>+((c.gs/18500)*100).toFixed(1)),backgroundColor:CATS_DATA.map(c=>{const p=(c.gs/18500)*100;return p>15?'rgba(255,69,58,.75)':p>10?'rgba(255,214,10,.75)':'rgba(48,209,88,.75)';}),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{ticks:{...TICK(),callback:v=>v+'%'},grid:GRID(),max:25},y:{ticks:{...TICK('#8e8e93',11)},grid:{display:false}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'% da renda'}}}}});
+}
+
+/* ═══════════════ IMPORT GC ═══════════════ */
+let GC_FILE_ID=null,FR_FILE_ID=null,FR_SHEET_NAME=null,FR_NEXT_ROW=2;
+let pendingImport=[],gcDuplicatas=0;
+
+function parseDateGC(ddmm){
+  if(!ddmm)return'';
+  const p=String(ddmm).split('/');
+  if(p.length<2)return'';
+  const dd=parseInt(p[0],10),mm=parseInt(p[1],10);
+  if(isNaN(dd)||isNaN(mm)||mm<1||mm>12)return'';
+  const now=new Date(),curY=now.getFullYear(),curM=now.getMonth()+1;
+  const y=mm>curM?curY-1:curY;
+  return`${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+}
+
+function cardToConta(card){
+  const last4=String(card||'').replace(/\D/g,'').slice(-4);
+  return({'2812':'itau-2812','4141':'itau-4141'}[last4])||'itau-cartao';
+}
+
+function autoCategorizaGC(merchant){
+  const m=String(merchant||'').toUpperCase();
+  for(const r of RULES){
+    const kws=r.kw.split(',').map(k=>k.trim()).filter(Boolean);
+    if(kws.some(kw=>m.includes(kw)))return{ct:r.ct,sb:r.sb};
+  }
+  return{ct:'Outros',sb:''};
+}
+
+async function lerGastosCartao(){
+  if(!GC_FILE_ID){const r=await gFetch('GET','/me/drive/root:/Financeiro/GastosCartao.xlsx');GC_FILE_ID=r.id;}
+  const sh=await gFetch('GET',`/me/drive/items/${GC_FILE_ID}/workbook/worksheets`);
+  const sn=encodeURIComponent(sh.value[0].name);
+  const d=await gFetch('GET',`/me/drive/items/${GC_FILE_ID}/workbook/worksheets/${sn}/usedRange`);
+  if(!d||!d.values||d.values.length<2)return[];
+  const hdr=d.values[0];
+  return d.values.slice(1).filter(r=>r.some(c=>c!==null&&c!=='')).map(r=>{const o={};hdr.forEach((h,i)=>o[h]=r[i]??'');return o;});
+}
+
+async function lerFinancasRafael(){
+  if(!FR_FILE_ID){const r=await gFetch('GET','/me/drive/root:/Financeiro/financas-rafael.xlsx');FR_FILE_ID=r.id;}
+  if(!FR_SHEET_NAME){const sh=await gFetch('GET',`/me/drive/items/${FR_FILE_ID}/workbook/worksheets`);FR_SHEET_NAME=sh.value[0].name;}
+  try{
+    const d=await gFetch('GET',`/me/drive/items/${FR_FILE_ID}/workbook/worksheets/${encodeURIComponent(FR_SHEET_NAME)}/usedRange`);
+    if(!d||!d.values||d.values.length<2){FR_NEXT_ROW=2;return[];}
+    FR_NEXT_ROW=d.values.length+1;
+    const hdr=d.values[0];
+    return d.values.slice(1).filter(r=>r.some(c=>c!==null&&c!=='')).map(r=>{const o={};hdr.forEach((h,i)=>o[h]=r[i]??'');return o;});
+  }catch(e){FR_NEXT_ROW=2;return[];}
+}
+
+async function iniciarImportGC(){
+  if(!curAcc){alert('Faça login com Microsoft 365 primeiro.');return;}
+  const btn=document.getElementById('btn-buscar-gc');
+  const status=document.getElementById('gc-import-status');
+  btn.disabled=true;btn.textContent='⏳ Buscando...';
+  if(status)status.textContent='';
+  try{
+    const[gcRows,frRows]=await Promise.all([lerGastosCartao(),lerFinancasRafael()]);
+    // Chave de deduplicação: Date + Merchant + Amount (como string para evitar diff de tipo)
+    const existKeys=new Set(frRows.map(r=>`${r.Date}|${r.Merchant}|${String(r.Amount)}`));
+    gcDuplicatas=0;pendingImport=[];
+    for(const row of gcRows){
+      const key=`${row.Date}|${row.Merchant}|${String(row.Amount)}`;
+      if(existKeys.has(key)){gcDuplicatas++;continue;}
+      const isoDate=parseDateGC(String(row.Date));
+      const amount=parseFloat(String(row.Amount).replace(',','.'))||0;
+      const{ct,sb}=autoCategorizaGC(row.Merchant);
+      pendingImport.push({
+        gcDate:row.Date,gcTime:row.Time||'',gcMerchant:row.Merchant||'',
+        gcAmount:row.Amount,gcCard:row.Card||'',gcLat:row.Latitude||'',
+        gcLon:row.Longitude||'',gcObs:row.Obs||'',
+        isoDate,mesAno:isoDate?isoDate.slice(0,7):'',
+        tipo:amount>=0?'despesa':'receita',
+        categoria:ct,subcategoria:sb,
+        conta:cardToConta(row.Card),amount
+      });
+    }
+    btn.disabled=false;btn.textContent='🔄 Buscar Novos Lançamentos';
+    if(status)status.textContent=pendingImport.length>0
+      ?`${pendingImport.length} novo(s) · ${gcDuplicatas} duplicata(s)`
+      :`Tudo importado (${gcDuplicatas} registros)`;
+    if(pendingImport.length===0){alert('Nenhum lançamento novo encontrado. Tudo já está importado!');return;}
+    abrirModalImport();
+  }catch(e){
+    btn.disabled=false;btn.textContent='🔄 Buscar Novos Lançamentos';
+    if(status)status.textContent='❌ Erro ao buscar';
+    alert('Erro ao acessar GastosCartao:\n'+(e.message||'Verifique a conexão e tente novamente.'));
+    console.error('iniciarImportGC:',e);
+  }
+}
+
+function abrirModalImport(){renderImportPreview();document.getElementById('imp-ov').classList.add('open');}
+function fecharImportModal(){document.getElementById('imp-ov').classList.remove('open');}
+
+function renderImportPreview(){
+  document.getElementById('imp-summary').textContent=pendingImport.length+' novo(s)';
+  const dupEl=document.getElementById('imp-duplicatas');
+  if(gcDuplicatas>0){dupEl.style.display='flex';dupEl.innerHTML=`⏭️ <div>${gcDuplicatas} lançamento(s) já importado(s) foram ignorados automaticamente.</div>`;}
+  else dupEl.style.display='none';
+  const TIPOS=['despesa','receita'];
+  const CONTAS=['itau-cartao','itau-corrente','nubank'];
+  const CATS=['Alimentação','Moradia','Saúde','Filhas','Transporte','Lazer','Vestuário','Assinaturas','Receitas','Outros'];
+  document.getElementById('imp-tbody').innerHTML=pendingImport.map((p,i)=>{
+    const abs=Math.abs(p.amount).toLocaleString('pt-BR',{minimumFractionDigits:2});
+    const cls=p.tipo==='receita'?'td-pos':'td-neg';
+    const sg=p.tipo==='receita'?'+':'-';
+    return`<tr>
+      <td style="white-space:nowrap;color:var(--t3);">${p.gcDate}</td>
+      <td class="td-main" title="${p.gcMerchant}">${p.gcMerchant}</td>
+      <td style="text-align:right;" class="${cls}">${sg}R$ ${abs}</td>
+      <td style="font-size:11px;color:var(--t3);">${p.gcCard}</td>
+      <td><select class="f-in" style="width:88px;padding:4px 6px;font-size:11px;" id="imp-tipo-${i}">${TIPOS.map(t=>`<option value="${t}"${t===p.tipo?' selected':''}>${t}</option>`).join('')}</select></td>
+      <td><select class="f-in" style="width:128px;padding:4px 6px;font-size:11px;" id="imp-cat-${i}">${CATS.map(c=>`<option value="${c}"${c===p.categoria?' selected':''}>${c}</option>`).join('')}</select></td>
+      <td><input class="f-in" style="width:105px;padding:4px 6px;font-size:11px;" id="imp-sub-${i}" value="${p.subcategoria}" placeholder="Subcategoria"></td>
+      <td><select class="f-in" style="width:110px;padding:4px 6px;font-size:11px;" id="imp-conta-${i}">${CONTAS.map(c=>`<option value="${c}"${c===p.conta?' selected':''}>${c}</option>`).join('')}</select></td>
+    </tr>`;
+  }).join('');
+}
+
+async function confirmarImportacao(){
+  if(!pendingImport.length)return;
+  const btn=document.getElementById('imp-confirm-btn');
+  btn.disabled=true;btn.textContent='⏳ Gravando...';
+  try{
+    // Garante que temos o file ID e sheet name carregados
+    if(!FR_FILE_ID||!FR_SHEET_NAME)await lerFinancasRafael();
+    // Monta todas as linhas (A-O): A-H = cópia GastosCartao, I-O = enriquecimento
+    const rows=pendingImport.map((p,i)=>[
+      p.gcDate,                                                            // A: Date
+      p.gcTime,                                                            // B: Time
+      p.gcMerchant,                                                        // C: Merchant
+      p.gcAmount,                                                          // D: Amount
+      p.gcCard,                                                            // E: Card
+      p.gcLat,                                                             // F: Latitude
+      p.gcLon,                                                             // G: Longitude
+      p.gcObs,                                                             // H: Obs
+      document.getElementById(`imp-tipo-${i}`)?.value||p.tipo,           // I: Tipo
+      document.getElementById(`imp-cat-${i}`)?.value||p.categoria,       // J: Categoria
+      document.getElementById(`imp-sub-${i}`)?.value||p.subcategoria,    // K: Subcategoria
+      document.getElementById(`imp-conta-${i}`)?.value||p.conta,         // L: Conta
+      'gc-import',                                                         // M: Origem
+      p.mesAno,                                                            // N: MesAno
+      ''                                                                   // O: ID_NF
+    ]);
+    const startRow=FR_NEXT_ROW,endRow=startRow+rows.length-1;
+    const sn=encodeURIComponent(FR_SHEET_NAME);
+    await gFetch('PATCH',
+      `/me/drive/items/${FR_FILE_ID}/workbook/worksheets/${sn}/range(address='A${startRow}:O${endRow}')`,
+      {values:rows}
+    );
+    FR_NEXT_ROW=endRow+1;
+    const cnt=pendingImport.length;pendingImport=[];
+    fecharImportModal();
+    setSyncBadge('ok','Importado ✓');
+    const st=document.getElementById('gc-import-status');
+    if(st)st.textContent=`✅ ${cnt} importado(s)`;
+    alert(`✅ ${cnt} lançamento(s) gravado(s) em Financeiro/financas-rafael.xlsx`);
+  }catch(e){
+    btn.disabled=false;btn.textContent='✓ Confirmar Importação';
+    alert('Erro ao gravar:\n'+(e.message||'Tente novamente.'));
+    console.error('confirmarImportacao:',e);
+  }
 }
 
 /* ═══════════════ BOOT ═══════════════ */
