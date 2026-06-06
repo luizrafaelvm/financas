@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 /* ============================================================
    RESET & DESIGN SYSTEM — Wallet/iOS Dark
@@ -626,6 +627,66 @@ canvas { max-height: 220px; }
   width: 10px; height: 10px; border-radius: 50%;
   display: inline-block; flex-shrink: 0;
 }
+@keyframes slideInToast {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.importar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 800px) {
+  .importar-grid { grid-template-columns: 1fr; }
+}
+.import-stats {
+  font-size: 13px; color: var(--text2);
+  padding: 10px 0; margin-top: 8px;
+}
+.badge-arquivo {
+  background: rgba(10,132,255,.12); color: var(--blue);
+  border-radius: 6px; padding: 2px 7px;
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  white-space: nowrap; overflow: hidden;
+  max-width: 120px; display: inline-block;
+  text-overflow: ellipsis; vertical-align: middle;
+}
+.pagination-row {
+  display: flex; justify-content: center;
+  align-items: center; gap: 12px;
+  padding: 12px 0; font-size: 13px; color: var(--text2);
+}
+.progress-bar-wrap {
+  background: rgba(255,255,255,0.08); border-radius: 6px;
+  height: 6px; overflow: hidden; margin-top: 12px;
+}
+.progress-bar { height: 100%; border-radius: 6px; transition: width .3s; }
+.nf-card {
+  display: flex; gap: 16px; align-items: flex-start;
+  padding: 14px; background: var(--card);
+  border: 1px solid var(--border); border-radius: 16px;
+}
+.nf-thumb {
+  width: 80px; height: 80px; border-radius: 10px;
+  object-fit: cover; flex-shrink: 0;
+  background: var(--bg3); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.nf-controls {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+}
+.nf-resultado-inner {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px; margin-top: 8px;
+}
+.nf-resultado-inner .data-table { font-size: 12px; }
+.nf-vinculado-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(48,209,88,.12); color: var(--green);
+  border-radius: 8px; padding: 4px 10px; font-size: 12px;
+}
 </style>
 </head>
 <body>
@@ -815,23 +876,75 @@ canvas { max-height: 220px; }
     <!-- ===== IMPORTAR ===== -->
     <div class="section" id="sec-importar">
       <div class="section-title">📥 Importar Dados</div>
-      <div class="card card-p" style="margin-bottom:16px">
-        <h3 style="font-size:14px;margin-bottom:6px">Extrato Itaú (OFX ou CSV)</h3>
-        <p style="font-size:12px;color:var(--text2);margin-bottom:16px">
-          No Internet Banking Itaú → Extrato → Exportar → Arquivo OFX.<br>
-          Para o cartão: Cartão de Crédito → Fatura → Exportar.
-        </p>
-        <div class="drop-zone" id="drop-zone"
-          onclick="document.getElementById('file-import').click()"
-          ondragover="event.preventDefault();this.classList.add('drag-over')"
-          ondragleave="this.classList.remove('drag-over')"
-          ondrop="handleDrop(event)">
-          <div class="drop-zone-icon">📄</div>
-          <div class="drop-zone-text">Arraste o arquivo aqui ou clique para selecionar</div>
-          <div class="drop-zone-sub">Formatos suportados: .ofx, .csv</div>
+
+      <div class="importar-grid">
+
+        <!-- BLOCO A: Extratos bancários -->
+        <div class="card card-p">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Extratos bancários</h3>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+            Conta corrente Itaú → Extrato → Exportar → OFX<br>
+            Cartão Itaú → Fatura → Exportar → OFX<br>
+            Nubank → Exportar extrato → CSV
+          </p>
+          <div class="drop-zone" id="drop-zone-extrato"
+            onclick="document.getElementById('file-extrato').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="handleDropExtrato(event)">
+            <div class="drop-zone-icon">📄</div>
+            <div class="drop-zone-text">Arraste OFX ou CSV aqui</div>
+            <div class="drop-zone-sub">Múltiplos arquivos suportados</div>
+          </div>
+          <input type="file" id="file-extrato" accept=".ofx,.csv,.OFX,.CSV" multiple style="display:none"
+            onchange="handleExtratoSelect(this)">
         </div>
-        <input type="file" id="file-import" accept=".ofx,.csv,.OFX,.CSV" style="display:none" onchange="handleFileSelect(this)">
-      </div>
+
+        <!-- BLOCO B: Outros cartões / bancos XLSX -->
+        <div class="card card-p">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Outros cartões / bancos</h3>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+            Importe extratos de outros cartões ou bancos em Excel.<br>
+            O arquivo deve ter colunas de data, descrição e valor<br>
+            (nomes variados são detectados automaticamente).
+          </p>
+          <div class="drop-zone" id="drop-zone-xlsx"
+            onclick="document.getElementById('file-xlsx').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="handleDropXLSX(event)">
+            <div class="drop-zone-icon">📊</div>
+            <div class="drop-zone-text">Arraste XLSX aqui</div>
+            <div class="drop-zone-sub">Múltiplos arquivos suportados</div>
+          </div>
+          <input type="file" id="file-xlsx" accept=".xlsx,.xls,.XLSX,.XLS" multiple style="display:none"
+            onchange="processXLSXFiles(this.files);this.value=''">
+        </div>
+
+        <!-- BLOCO C: Notas fiscais (placeholder) -->
+        <div class="card card-p">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:6px">Notas fiscais</h3>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+            Envie fotos ou PDFs de notas fiscais. A IA extrai os dados<br>
+            e vincula ao lançamento correspondente.
+          </p>
+          <div class="drop-zone" id="drop-zone-nf"
+            onclick="document.getElementById('file-nf').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="handleDropNF(event)">
+            <div class="drop-zone-icon">🧾</div>
+            <div class="drop-zone-text">Arraste imagens ou PDFs aqui</div>
+            <div class="drop-zone-sub">Análise por IA disponível</div>
+          </div>
+          <input type="file" id="file-nf" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none"
+            onchange="handleNFSelect(this)">
+          <div id="nf-grade" style="margin-top:16px;display:flex;flex-direction:column;gap:12px"></div>
+        </div>
+
+      </div><!-- fim .importar-grid -->
+
+      <!-- ÁREA DE PREVIEW UNIFICADA -->
       <div id="import-preview" class="hidden">
         <div class="card card-p">
           <div class="preview-header">
@@ -847,10 +960,19 @@ canvas { max-height: 220px; }
                 <tr>
                   <th>Data</th><th>Descrição</th><th>Categoria</th>
                   <th>Subcategoria</th><th style="text-align:right">Valor</th>
+                  <th>Arquivo</th>
                 </tr>
               </thead>
               <tbody id="preview-body"></tbody>
             </table>
+          </div>
+          <div id="preview-pagination" class="pagination-row" style="display:none"></div>
+          <div id="import-stats" class="import-stats hidden"></div>
+          <div id="import-progress" class="hidden" style="margin-top:8px">
+            <div class="progress-bar-wrap">
+              <div id="import-progress-bar" class="progress-bar" style="width:0%;background:var(--blue)"></div>
+            </div>
+            <div id="import-progress-text" style="font-size:12px;color:var(--text2);margin-top:6px"></div>
           </div>
         </div>
       </div>
@@ -917,7 +1039,7 @@ canvas { max-height: 220px; }
       <div class="card card-p">
         <h3 style="font-size:15px;font-weight:600;margin-bottom:16px">Ações</h3>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="loadAllData()">🔄 Re-sincronizar OneDrive</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadAllData().then(()=>syncGastosCartao())">🔄 Re-sincronizar OneDrive</button>
           <button class="btn btn-secondary btn-sm" onclick="exportarJSON()">📦 Exportar dados JSON</button>
           <button class="btn btn-danger btn-sm" onclick="clearCache()">🗑️ Limpar cache local</button>
         </div>
@@ -1050,6 +1172,29 @@ canvas { max-height: 220px; }
   </div>
 </div>
 
+<!-- Modal: Mapear colunas XLSX -->
+<div class="modal-overlay hidden" id="modal-mapeamento">
+  <div class="modal-box">
+    <div class="modal-title" id="mapeamento-titulo">Mapear colunas</div>
+    <div class="form-group">
+      <label class="form-label">Coluna de Data</label>
+      <select class="form-select" id="map-data"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Coluna de Descrição</label>
+      <select class="form-select" id="map-desc"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Coluna de Valor</label>
+      <select class="form-select" id="map-valor"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('mapeamento')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarMapeamento()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ==================== SCRIPTS ==================== -->
 <script>
 'use strict';
@@ -1082,15 +1227,17 @@ const loginRequest = { scopes: ['User.Read', 'Files.ReadWrite'] };
    ESTADO GLOBAL
    ============================================================ */
 const S = {
-  token:         null,
-  fileId:        localStorage.getItem('rfm_file_id') || null,
-  transactions:  [],
-  metas:         {},
-  config:        {},
-  mesAtual:      getMesAtual(),
-  importBuffer:  [],
-  chatHistory:   [],
-  charts:        {}
+  token:               null,
+  fileId:              localStorage.getItem('rfm_file_id') || null,
+  transactions:        [],
+  metas:               {},
+  config:              {},
+  mesAtual:            getMesAtual(),
+  importBuffer:        [],
+  chatHistory:         [],
+  charts:              {},
+  gastosCartaoFileId:  localStorage.getItem('rfm_gastoscartao_id') || null,
+  gastosCartaoAnoBase: parseInt(localStorage.getItem('rfm_gastoscartao_anobase')) || (new Date().getFullYear() - 3)
 };
 
 /* ============================================================
@@ -1288,9 +1435,136 @@ async function loadAllData() {
 
     showLoading(false);
     renderAll();
+    syncGastosCartao();
   } catch (e) {
     showLoading(false);
     alert('Erro ao carregar dados: ' + e.message);
+  }
+}
+
+/* ============================================================
+   SYNC GASTOSCARTAO
+   ============================================================ */
+let _syncGCRunning = false;
+
+async function syncGastosCartao() {
+  if (_syncGCRunning) return;
+  _syncGCRunning = true;
+  try {
+    // 1) Localizar GastosCartao.xlsx
+    let gcId = S.gastosCartaoFileId;
+    if (gcId) {
+      try { await graphFetch(`/me/drive/items/${gcId}`); }
+      catch { gcId = null; }
+    }
+    if (!gcId) {
+      try {
+        const d = await graphFetch(`/me/drive/root:/Financeiro/GastosCartao.xlsx`);
+        if (d?.id) { gcId = d.id; S.gastosCartaoFileId = d.id; localStorage.setItem('rfm_gastoscartao_id', d.id); }
+      } catch {}
+    }
+    if (!gcId) {
+      try {
+        const s = await graphFetch(`/me/drive/root/search(q='GastosCartao.xlsx')`);
+        const f = s?.value?.find(i => i.name === 'GastosCartao.xlsx');
+        if (f) { gcId = f.id; S.gastosCartaoFileId = f.id; localStorage.setItem('rfm_gastoscartao_id', f.id); }
+      } catch {}
+    }
+    if (!gcId) { showToast('GastosCartao não localizado', 'amarelo'); return; }
+
+    // 2) Ler primeira aba (usedRange)
+    const wbSheets = await graphFetch(`/me/drive/items/${gcId}/workbook/worksheets`);
+    const primeiraAba = wbSheets?.value?.[0]?.name;
+    if (!primeiraAba) { showToast('GastosCartao não localizado', 'amarelo'); return; }
+
+    const rangeData = await graphFetch(
+      `/me/drive/items/${gcId}/workbook/worksheets/${encodeURIComponent(primeiraAba)}/usedRange`
+    );
+    const raw = rangeData?.values;
+    if (!raw || raw.length < 2) {
+      showToast('✓ GastosCartao atualizado — nenhuma transação nova', 'verde');
+      return;
+    }
+
+    // 3) Processar em chunks de 500, inferindo MesAno cronologicamente
+    const CHUNK = 500;
+    const novas = [];
+    let anoBase = S.gastosCartaoAnoBase;
+    let prevMes = null;
+
+    for (let start = 1; start < raw.length; start += CHUNK) {
+      await new Promise(r => setTimeout(r, 0));
+      const chunk = raw.slice(start, start + CHUNK);
+      for (const r of chunk) {
+        if (!r) continue;
+        const descricao = String(r[2] || '').trim();
+        const valor = parseValorBR(r[3]);
+        if (!descricao || valor === 0) continue;
+
+        // Heurística de sequência cronológica
+        const partes = String(r[0] || '').split('/');
+        const mes = parseInt(partes[1]) || 1;
+        if (prevMes !== null && mes < prevMes) anoBase++;
+        prevMes = mes;
+        const mesAno = `${anoBase}-${String(mes).padStart(2,'0')}`;
+
+        // Deduplicação
+        const data = reconstructDate(r[0], mesAno);
+        const dataStr = data.toISOString().slice(0,10);
+        const conta = mapCartao(r[4]);
+        const existe = S.transactions.some(tx =>
+          (tx.data instanceof Date ? tx.data.toISOString().slice(0,10) : '') === dataStr &&
+          tx.descricao === descricao &&
+          tx.valor === valor &&
+          tx.conta === conta
+        );
+        if (existe) continue;
+
+        const { cat, sub } = categorizar(descricao);
+        novas.push({
+          colA: String(r[0] || ''), colB: String(r[1] || ''),
+          colC: descricao, colD: String(r[3] || ''),
+          colE: r[4], colF: r[5] || '', colG: r[6] || '', colH: String(r[7] || ''),
+          tipo: cat === 'Receitas' ? 'receita' : 'despesa',
+          cat, sub, conta, mesAno, data, valor
+        });
+      }
+    }
+
+    // 4) Gravar novas linhas na aba Dados em lotes de 50
+    if (novas.length > 0) {
+      for (let i = 0; i < novas.length; i += 50) {
+        await new Promise(r => setTimeout(r, 0));
+        for (const tx of novas.slice(i, i + 50)) {
+          const row = [
+            tx.colA, tx.colB, tx.colC, tx.colD, tx.colE,
+            tx.colF, tx.colG, tx.colH,
+            tx.tipo, tx.cat, tx.sub, tx.conta,
+            'cartao-automatico', tx.mesAno, '', ''
+          ];
+          await appendRow(SHEET_DADOS, row);
+          S.transactions.push({
+            id: S.transactions.length + 1,
+            rowIndex: S.transactions.length + 2,
+            data: tx.data, hora: tx.colB,
+            descricao: tx.colC, valor: tx.valor,
+            valorSigned: tx.tipo === 'despesa' ? -tx.valor : tx.valor,
+            tipo: tx.tipo, categoria: tx.cat, subcategoria: tx.sub,
+            conta: tx.conta, origem: 'cartao-automatico',
+            observacao: tx.colH, mesAno: tx.mesAno,
+            idNF: '', categorizadoNoExcel: false
+          });
+        }
+      }
+      renderAll();
+      showToast(`✓ GastosCartao — ${novas.length} novas transações`, 'verde');
+    } else {
+      showToast('✓ GastosCartao atualizado — nenhuma transação nova', 'verde');
+    }
+  } catch (e) {
+    console.error('syncGastosCartao:', e);
+  } finally {
+    _syncGCRunning = false;
   }
 }
 
@@ -1398,6 +1672,19 @@ function fmtData(d) {
   if (typeof d === 'string') d = new Date(d);
   if (isNaN(d.getTime())) return '';
   return d.toLocaleDateString('pt-BR');
+}
+
+function showToast(mensagem, tipo) {
+  const cor = tipo === 'verde' ? 'var(--green)' : 'var(--yellow)';
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:var(--bg3);color:var(--text);border-left:4px solid ${cor};
+    border-radius:12px;padding:12px 18px;font-size:14px;font-family:inherit;
+    box-shadow:0 4px 20px rgba(0,0,0,0.6);max-width:320px;
+    animation:slideInToast .25s ease;`;
+  el.textContent = mensagem;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 
 function mesAnoLabel(mesAno) {
@@ -2005,40 +2292,459 @@ async function saveMeta() {
 }
 
 /* ============================================================
-   IMPORTAR OFX / CSV
+   IMPORTAR — DROP HANDLERS
    ============================================================ */
-function handleDrop(e) {
+function handleDropExtrato(e) {
   e.preventDefault();
-  document.getElementById('drop-zone').classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) processImportFile(file);
+  document.getElementById('drop-zone-extrato').classList.remove('drag-over');
+  processExtratFiles(e.dataTransfer.files);
 }
 
-function handleFileSelect(input) {
-  const file = input.files[0];
-  if (file) processImportFile(file);
+function handleDropXLSX(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone-xlsx').classList.remove('drag-over');
+  processXLSXFiles(e.dataTransfer.files);
+}
+
+function handleDropNF(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone-nf').classList.remove('drag-over');
+  processNFFiles(e.dataTransfer.files);
+}
+
+function handleExtratoSelect(input) {
+  processExtratFiles(input.files);
   input.value = '';
 }
 
-function processImportFile(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const content = e.target.result;
-    const ext = file.name.split('.').pop().toLowerCase();
-    let txs = [];
-    try {
-      if (ext === 'ofx') txs = parseOFX(content);
-      else txs = parseCSV(content);
-    } catch(err) {
-      alert('Erro ao ler arquivo: ' + err.message); return;
-    }
-    if (!txs.length) { alert('Nenhuma transação encontrada no arquivo.'); return; }
-    S.importBuffer = txs;
-    showImportPreview(txs);
-  };
-  reader.readAsText(file, 'latin1');
+function handleNFSelect(input) {
+  processNFFiles(input.files);
+  input.value = '';
 }
 
+/* ============================================================
+   NOTAS FISCAIS — IA
+   ============================================================ */
+window.nfBuffer = [];
+window.mapeamentoPendente = null;
+
+const PROMPT_NF = `Extraia todos os dados desta nota fiscal e retorne exatamente este JSON:
+{
+  "estabelecimento": "nome do estabelecimento",
+  "data": "DD/MM/YYYY",
+  "valor_total": 0.00,
+  "itens": [
+    {
+      "descricao": "nome do item ou serviço",
+      "quantidade": 1,
+      "valor_unitario": 0.00,
+      "valor_total_item": 0.00
+    }
+  ],
+  "forma_pagamento": "cartão/dinheiro/pix/não identificado",
+  "categoria_sugerida": "use apenas: Saúde, Alimentação, Moradia, Transporte, Lazer, Vestuário, Assinaturas, Outros",
+  "subcategoria_sugerida": "subcategoria específica",
+  "observacao": "informação adicional relevante"
+}
+Regra: valor_unitario × quantidade = valor_total_item para cada item.
+Regra: soma de todos valor_total_item = valor_total da nota.`;
+
+function processNFFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  Array.from(fileList).forEach((file, i) => {
+    const nf = {
+      id: Date.now() + i,
+      file,
+      name: file.name,
+      type: file.type,
+      resultado: null,
+      lancamentoVinculado: null
+    };
+    window.nfBuffer.push(nf);
+    renderNFCard(nf);
+  });
+}
+
+function renderNFCard(nf) {
+  const grade = document.getElementById('nf-grade');
+  if (!grade) return;
+
+  const hasKey = !!localStorage.getItem('rfm_claude_key');
+  const thumbHtml = nf.type.includes('image')
+    ? `<img class="nf-thumb" src="${URL.createObjectURL(nf.file)}" alt="">`
+    : `<div class="nf-thumb">📄<div style="font-size:10px;color:var(--text3);margin-top:4px;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nf.name}</div></div>`;
+
+  const analisarBtn = hasKey
+    ? `<button class="btn btn-secondary btn-sm" id="nf-btn-${nf.id}" onclick="analisarNF(${nf.id})">🤖 Analisar com IA</button>`
+    : `<small style="color:var(--yellow)">⚠️ Configure API Key em Configurações para usar IA</small>`;
+
+  const optsTx = getTxsParaVincular()
+    .map((t, idx) => `<option value="${idx}">${fmtData(t.data)} · ${t.descricao.substring(0,25)} · ${fmtBRL(t.valor)}</option>`)
+    .join('');
+
+  const card = document.createElement('div');
+  card.id = `nf-card-${nf.id}`;
+  card.className = 'nf-card';
+  card.innerHTML = `
+    ${thumbHtml}
+    <div class="nf-controls">
+      <span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nf.name}</span>
+      <select class="form-select" id="nf-link-${nf.id}" style="font-size:12px">
+        <option value="">— Vincular ao lançamento —</option>
+        ${optsTx}
+      </select>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${analisarBtn}
+        <button class="btn btn-secondary btn-sm" onclick="vincularNF(${nf.id})">🔗 Vincular</button>
+        <button class="btn btn-sm" style="background:rgba(255,69,58,.15);color:var(--red);border:none;border-radius:8px;padding:6px 10px;cursor:pointer" onclick="removerNF(${nf.id})">🗑️</button>
+      </div>
+      <div id="nf-resultado-${nf.id}" class="hidden"></div>
+    </div>`;
+  grade.appendChild(card);
+}
+
+function getTxsParaVincular() {
+  return txsMes(S.mesAtual).slice().sort((a, b) => b.data - a.data);
+}
+
+async function analisarNF(nfId) {
+  const nf = window.nfBuffer.find(n => n.id === nfId);
+  if (!nf) return;
+  const apiKey = localStorage.getItem('rfm_claude_key');
+  if (!apiKey) { showToast('Configure a API Key em Configurações', 'amarelo'); return; }
+
+  const btn = document.getElementById(`nf-btn-${nfId}`);
+  if (btn) { btn.textContent = '⏳ Analisando...'; btn.disabled = true; }
+
+  try {
+    const base64 = await fileToBase64(nf.file);
+    const contentBlock = nf.type.includes('pdf')
+      ? [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: PROMPT_NF }
+        ]
+      : [
+          { type: 'image', source: { type: 'base64', media_type: nf.type, data: base64 } },
+          { type: 'text', text: PROMPT_NF }
+        ];
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        system: 'Você é um assistente de controle financeiro pessoal. Analise o documento enviado e extraia os dados da nota fiscal com precisão. Responda APENAS com JSON válido, sem texto adicional, sem markdown.',
+        messages: [{ role: 'user', content: contentBlock }]
+      })
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const raw = data.content[0].text.replace(/```json?|```/g, '').trim();
+    nf.resultado = JSON.parse(raw);
+    exibirResultadoNF(nf);
+  } catch(e) {
+    const div = document.getElementById(`nf-resultado-${nfId}`);
+    if (div) { div.classList.remove('hidden'); div.innerHTML = `<small style="color:var(--red)">Erro: ${e.message}</small>`; }
+  } finally {
+    if (btn) { btn.textContent = '🤖 Analisar com IA'; btn.disabled = false; }
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function exibirResultadoNF(nf) {
+  const div = document.getElementById(`nf-resultado-${nf.id}`);
+  if (!div || !nf.resultado) return;
+  const r = nf.resultado;
+
+  const somaItens = (r.itens || []).reduce((s, it) => s + (it.valor_total_item || 0), 0);
+  const diverge = Math.abs(somaItens - r.valor_total) > 0.05;
+  const totalCor = diverge ? 'var(--red)' : 'var(--green)';
+
+  const linhasItens = (r.itens || []).map(it => `
+    <tr>
+      <td>${it.descricao}</td>
+      <td style="text-align:center">${it.quantidade}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace">${fmtBRL(it.valor_unitario)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace">${fmtBRL(it.valor_total_item)}</td>
+    </tr>`).join('');
+
+  const alertaDivergencia = diverge
+    ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(255,214,10,.12);color:var(--yellow);border-radius:8px;font-size:12px">
+        ⚠️ Soma dos itens (${fmtBRL(somaItens)}) difere do total (${fmtBRL(r.valor_total)})
+       </div>` : '';
+
+  div.classList.remove('hidden');
+  div.innerHTML = `
+    <div class="nf-resultado-inner">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <strong style="font-size:13px">${r.estabelecimento}</strong>
+        <span style="font-size:12px;color:var(--text2)">${r.data}</span>
+        <span class="badge badge-gray" style="font-size:10px">${r.categoria_sugerida}</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table nf-resultado-inner">
+          <thead><tr><th>Item</th><th style="text-align:center">Qtd</th><th style="text-align:right">Unit.</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody>
+            ${linhasItens}
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="3"><strong>TOTAL</strong></td>
+              <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:600;color:${totalCor}">${fmtBRL(r.valor_total)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${alertaDivergencia}
+      <div style="font-size:12px;color:var(--text2);margin-top:8px">Pagamento: ${r.forma_pagamento}</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="usarDadosNF(${nf.id})">✓ Usar estes dados</button>
+    </div>`;
+}
+
+function usarDadosNF(nfId) {
+  const nf = window.nfBuffer.find(n => n.id === nfId);
+  if (!nf?.resultado) return;
+  const r = nf.resultado;
+  const estab = (r.estabelecimento || '').toLowerCase();
+  const txs = getTxsParaVincular();
+
+  // Buscar por similaridade de descrição ou proximidade de valor
+  let bestIdx = -1, bestScore = -1;
+  txs.forEach((t, idx) => {
+    let score = 0;
+    const desc = t.descricao.toLowerCase();
+    if (estab && desc.includes(estab.substring(0, Math.min(6, estab.length)))) score += 2;
+    if (Math.abs(t.valor - r.valor_total) < 0.5) score += 3;
+    else if (Math.abs(t.valor - r.valor_total) < 5) score += 1;
+    if (score > bestScore) { bestScore = score; bestIdx = idx; }
+  });
+
+  if (bestIdx >= 0) {
+    const sel = document.getElementById(`nf-link-${nfId}`);
+    if (sel) sel.value = bestIdx;
+  }
+  vincularNF(nfId);
+}
+
+async function vincularNF(nfId) {
+  const nf = window.nfBuffer.find(n => n.id === nfId);
+  if (!nf) return;
+  const sel = document.getElementById(`nf-link-${nfId}`);
+  if (!sel || sel.value === '') {
+    showToast('Selecione um lançamento para vincular', 'amarelo'); return;
+  }
+  const txIdx = parseInt(sel.value);
+  const txs = getTxsParaVincular();
+  const tx = txs[txIdx];
+  if (!tx) return;
+
+  // Montar texto de observação
+  const r = nf.resultado || {};
+  let obs = `NF: ${r.estabelecimento || nf.name} ${r.data || ''} · Total: R$${r.valor_total || ''}`;
+  if (r.itens?.length) {
+    const itensStr = r.itens.map(it => `${it.descricao} x${it.quantidade} R$${it.valor_unitario}`).join(' · ');
+    obs += ` · Itens: ${itensStr}`;
+  }
+  if (obs.length > 250) obs = obs.substring(0, 247) + '...';
+
+  // Atualizar memória local
+  tx.observacao = obs;
+  nf.lancamentoVinculado = tx.id;
+
+  // Gravar no Excel: coluna H = Obs (índice 7, col H)
+  try {
+    await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(SHEET_DADOS)}/range(address='H${tx.rowIndex}')`,
+      { method: 'PATCH', body: { values: [[obs]] } }
+    );
+  } catch(e) {
+    showToast(`Erro ao gravar: ${e.message}`, 'amarelo'); return;
+  }
+
+  // Feedback visual no card
+  const card = document.getElementById(`nf-card-${nfId}`);
+  if (card) {
+    const badge = document.createElement('span');
+    badge.className = 'nf-vinculado-badge';
+    badge.textContent = '✓ Vinculado';
+    card.querySelector('.nf-controls').appendChild(badge);
+  }
+  showToast('✓ Nota vinculada ao lançamento', 'verde');
+}
+
+function removerNF(nfId) {
+  window.nfBuffer = window.nfBuffer.filter(n => n.id !== nfId);
+  const card = document.getElementById(`nf-card-${nfId}`);
+  if (card) card.remove();
+}
+
+/* ---- processExtratFiles: lê múltiplos OFX/CSV e acumula no importBuffer ---- */
+function processExtratFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  const files = Array.from(fileList);
+  let pending = files.length;
+  let lidas = 0, duplas = 0;
+
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const content = ev.target.result;
+      const ext = file.name.split('.').pop().toLowerCase();
+      let parsed = [];
+      try {
+        parsed = ext === 'ofx' ? parseOFX(content) : parseCSV(content);
+      } catch(err) {
+        showToast(`Erro em ${file.name}: ${err.message}`, 'amarelo');
+      }
+      parsed.forEach(t => { t.origem_arquivo = file.name; });
+      lidas += parsed.length;
+
+      // Dedup contra S.transactions
+      const novas = parsed.filter(t => !isDuplicata(t));
+      duplas += parsed.length - novas.length;
+      S.importBuffer = S.importBuffer.concat(novas);
+
+      pending--;
+      if (pending === 0) {
+        showImportPreview(S.importBuffer);
+        atualizarImportStats(lidas, duplas, S.importBuffer.length);
+      }
+    };
+    reader.readAsText(file, 'latin1');
+  });
+}
+
+/* ---- processXLSXFiles: lê múltiplos XLSX via SheetJS ---- */
+function processXLSXFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  if (typeof XLSX === 'undefined') {
+    showToast('SheetJS não carregado — adicione o CDN na página', 'amarelo'); return;
+  }
+  const files = Array.from(fileList);
+  let pending = files.length;
+
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        parseXLSXExterno(rows, file.name);
+      } catch(err) {
+        showToast(`Erro em ${file.name}: ${err.message}`, 'amarelo');
+      }
+      pending--;
+      if (pending === 0 && S.importBuffer.length) {
+        showImportPreview(S.importBuffer);
+        atualizarImportStats(S.importBuffer.length, 0, S.importBuffer.length);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* ---- parseXLSXExterno: detecta colunas e popula importBuffer ---- */
+function parseXLSXExterno(rows, fileName, idxForced) {
+  if (!rows || rows.length < 2) return;
+  const header = (rows[0] || []).map(h => String(h || '').toLowerCase().trim());
+
+  const findCol = (keywords) => {
+    for (const kw of keywords) {
+      const idx = header.findIndex(h => h.includes(kw));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+
+  let iData  = idxForced?.data  ?? findCol(['data','date','dt','vencimento']);
+  let iDesc  = idxForced?.desc  ?? findCol(['descricao','descrição','historico','histórico','estabelecimento','memo','name','merchant','lancamento','lançamento']);
+  let iValor = idxForced?.valor ?? findCol(['valor','value','amount','debito','débito','credito','crédito','montante','parcela']);
+
+  if (iData < 0 || iDesc < 0 || iValor < 0) {
+    showModalMapeamento(rows, fileName, (idx) => parseXLSXExterno(rows, fileName, idx));
+    return;
+  }
+
+  let lidas = 0, duplas = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(c => c === null || c === '' || c === undefined)) continue;
+    const descricao = String(r[iDesc] || '').trim();
+    if (!descricao) continue;
+
+    // Inferir valor (pode ser negativo → despesa)
+    const rawValor = r[iValor];
+    const valorNum = typeof rawValor === 'number' ? rawValor : parseValorBR(String(rawValor || ''));
+    if (!valorNum && valorNum !== 0) continue;
+    const valor = Math.abs(valorNum);
+    if (valor === 0) continue;
+    const tipo = valorNum < 0 ? 'despesa' : 'receita';
+
+    // Parse de data
+    let date;
+    const rawDate = r[iData];
+    if (rawDate instanceof Date) {
+      date = rawDate;
+    } else if (typeof rawDate === 'number') {
+      // Serial de data Excel
+      date = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+    } else {
+      const ds = String(rawDate || '').trim();
+      const pts = ds.split(/[\/\-\.]/);
+      if (pts.length === 3) {
+        const [a, b, c] = pts;
+        // Detectar DD/MM/YYYY vs YYYY-MM-DD
+        date = a.length === 4
+          ? new Date(`${a}-${b.padStart(2,'0')}-${c.padStart(2,'0')}T00:00:00`)
+          : new Date(`${c}-${b.padStart(2,'0')}-${a.padStart(2,'0')}T00:00:00`);
+      }
+    }
+    if (!date || isNaN(date.getTime())) continue;
+
+    const mesAno = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
+    const { cat, sub } = categorizar(descricao);
+    lidas++;
+    const tx = { data: date, descricao, valor, tipo, cat, sub,
+      conta: 'itau-cartao', mesAno, origem: 'xlsx-import', origem_arquivo: fileName };
+
+    if (isDuplicata(tx)) { duplas++; continue; }
+    S.importBuffer.push(tx);
+  }
+  atualizarImportStats(lidas, duplas, S.importBuffer.length);
+}
+
+/* ---- isDuplicata: checa contra S.transactions ---- */
+function isDuplicata(t) {
+  const tStr = t.data instanceof Date ? t.data.toISOString().slice(0,10) : '';
+  return S.transactions.some(tx => {
+    const txStr = tx.data instanceof Date ? tx.data.toISOString().slice(0,10) : '';
+    return txStr === tStr && tx.descricao === t.descricao &&
+           tx.valor === t.valor && tx.conta === t.conta;
+  });
+}
+
+/* ---- atualizarImportStats ---- */
+function atualizarImportStats(lidas, duplas, novas) {
+  const el = document.getElementById('import-stats');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.textContent = `✓ ${lidas} lidas · ${duplas} duplicatas ignoradas · ${novas} novas a importar`;
+}
+
+/* ---- parseOFX (mantida) ---- */
 function parseOFX(content) {
   const txs = [];
   const stmtBlocks = content.match(/<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi) || [];
@@ -2053,20 +2759,17 @@ function parseOFX(content) {
     const mesAno = `${y}-${mo}`;
     const { cat, sub } = categorizar(memo);
     const tipo = amount < 0 ? 'despesa' : 'receita';
-    txs.push({
-      data: date, descricao: memo,
-      valor: Math.abs(amount), tipo, cat, sub,
-      conta: 'itau-corrente', mesAno, origem: 'ofx-import'
-    });
+    txs.push({ data: date, descricao: memo, valor: Math.abs(amount),
+      tipo, cat, sub, conta: 'itau-corrente', mesAno, origem: 'ofx-import' });
   });
   return txs;
 }
 
+/* ---- parseCSV (mantida) ---- */
 function parseCSV(content) {
   const txs = [];
   const lines = content.split(/\r?\n/).filter(l=>l.trim());
   if (lines.length < 2) return txs;
-  // Detectar separador
   const sep = lines[0].includes(';') ? ';' : ',';
   const header = lines[0].split(sep).map(h=>h.trim().toLowerCase().replace(/"/g,''));
 
@@ -2076,17 +2779,14 @@ function parseCSV(content) {
     const row = {};
     header.forEach((h,j)=>{ row[h]=cols[j]||''; });
 
-    // Formatos Itaú CSV: Data;Histórico;Docto.;Crédito;Débito;Saldo
-    const dateStr = row['data'] || row['date'] || cols[0];
+    const dateStr = row['data']||row['date']||cols[0];
     const memo    = row['histórico']||row['historico']||row['descricao']||row['description']||cols[1]||'';
     const credit  = parseValorBR(row['crédito']||row['credito']||'0');
     const debit   = parseValorBR(row['débito']||row['debito']||'0');
     const valor   = credit > 0 ? credit : debit;
     const tipo    = credit > 0 ? 'receita' : 'despesa';
-
     if (!dateStr || !memo || valor === 0) continue;
 
-    // Parse date DD/MM/YYYY
     let date;
     const parts = dateStr.split('/');
     if (parts.length === 3) {
@@ -2096,21 +2796,34 @@ function parseCSV(content) {
 
     const mesAno = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
     const { cat, sub } = categorizar(memo);
-    txs.push({
-      data: date, descricao: memo,
-      valor, tipo, cat, sub,
-      conta: 'itau-corrente', mesAno, origem: 'csv-import'
-    });
+    txs.push({ data: date, descricao: memo, valor, tipo, cat, sub,
+      conta: 'itau-corrente', mesAno, origem: 'csv-import' });
   }
   return txs;
 }
 
+/* ---- showImportPreview: com paginação e coluna Arquivo ---- */
+let _importPage = 0;
+const _importPageSize = 50;
+
 function showImportPreview(txs) {
+  _importPage = 0;
   const el = document.getElementById('import-preview');
   el.classList.remove('hidden');
-  document.getElementById('preview-count').textContent = `${txs.length} transações encontradas`;
+  _renderImportPage(txs);
+}
+
+function _renderImportPage(txs) {
+  const total = txs.length;
+  const start = _importPage * _importPageSize;
+  const end   = Math.min(start + _importPageSize, total);
+  const pages = Math.ceil(total / _importPageSize);
+
+  document.getElementById('preview-count').textContent =
+    `${total} transações encontradas`;
+
   const body = document.getElementById('preview-body');
-  body.innerHTML = txs.slice(0,50).map(t=>`
+  body.innerHTML = txs.slice(start, end).map(t => `
     <tr>
       <td style="font-size:12px">${fmtData(t.data)}</td>
       <td style="font-size:12px">${t.descricao}</td>
@@ -2119,43 +2832,101 @@ function showImportPreview(txs) {
       <td style="text-align:right;font-family:'DM Mono',monospace;color:${t.tipo==='receita'?'var(--green)':'var(--red)'};font-size:13px">
         ${t.tipo==='receita'?'+':'-'}${fmtBRL(t.valor)}
       </td>
+      <td><span class="badge-arquivo" title="${t.origem_arquivo||''}">${t.origem_arquivo||''}</span></td>
     </tr>`).join('');
+
+  const pg = document.getElementById('preview-pagination');
+  if (pages > 1) {
+    pg.style.display = 'flex';
+    pg.innerHTML = `
+      <button class="btn btn-secondary btn-sm" onclick="_importPage=Math.max(0,_importPage-1);_renderImportPage(S.importBuffer)"
+        ${_importPage===0?'disabled':''}>← Anterior</button>
+      <span>Pág. ${_importPage+1} / ${pages}</span>
+      <button class="btn btn-secondary btn-sm" onclick="_importPage=Math.min(${pages-1},_importPage+1);_renderImportPage(S.importBuffer)"
+        ${_importPage===pages-1?'disabled':''}>Próxima →</button>`;
+  } else {
+    pg.style.display = 'none';
+  }
 }
 
 function cancelImport() {
   S.importBuffer = [];
+  _importPage = 0;
   document.getElementById('import-preview').classList.add('hidden');
+  const stats = document.getElementById('import-stats');
+  if (stats) stats.classList.add('hidden');
 }
 
 async function confirmImport() {
   if (!S.importBuffer.length) return;
-  showLoading(true, `Importando ${S.importBuffer.length} transações...`);
+  const total = S.importBuffer.length;
+  const prog  = document.getElementById('import-progress');
+  const bar   = document.getElementById('import-progress-bar');
+  const txt   = document.getElementById('import-progress-text');
+  prog.classList.remove('hidden');
+  bar.style.width = '0%';
+
   try {
-    for (const t of S.importBuffer) {
-      const d = t.data;
-      const row = [
-        `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
-        '00h00', t.descricao, t.valor.toFixed(2), '', '', '', '',
-        t.tipo, t.cat, t.sub, t.conta, t.origem, t.mesAno, '', Date.now()
-      ];
-      await appendRow(SHEET_DADOS, row);
-      S.transactions.push({
-        id: Date.now(), rowIndex: -1,
-        data: d, hora: '', descricao: t.descricao,
-        valor: t.valor, valorSigned: t.tipo==='despesa'?-t.valor:t.valor,
-        tipo: t.tipo, categoria: t.cat, subcategoria: t.sub,
-        conta: t.conta, origem: t.origem, observacao: '',
-        mesAno: t.mesAno, idNF: '', categorizadoNoExcel: true
-      });
+    let done = 0;
+    for (let i = 0; i < total; i += 50) {
+      const batch = S.importBuffer.slice(i, i + 50);
+      for (const t of batch) {
+        const d = t.data;
+        const row = [
+          `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
+          '00h00', t.descricao, t.valor.toFixed(2).replace('.',','), '', '', '', '',
+          t.tipo, t.cat, t.sub, t.conta, t.origem||'ofx-import', t.mesAno, '', Date.now()
+        ];
+        await appendRow(SHEET_DADOS, row);
+        S.transactions.push({
+          id: Date.now(), rowIndex: -1,
+          data: d, hora: '', descricao: t.descricao,
+          valor: t.valor, valorSigned: t.tipo==='despesa'?-t.valor:t.valor,
+          tipo: t.tipo, categoria: t.cat, subcategoria: t.sub,
+          conta: t.conta, origem: t.origem||'ofx-import', observacao: '',
+          mesAno: t.mesAno, idNF: '', categorizadoNoExcel: true
+        });
+        done++;
+      }
+      const pct = Math.round((done / total) * 100);
+      bar.style.width = pct + '%';
+      txt.textContent = `Gravando ${done} / ${total}...`;
+      await new Promise(r => setTimeout(r, 0));
     }
+    prog.classList.add('hidden');
     cancelImport();
     renderAll();
-    showLoading(false);
-    alert(`✅ ${S.importBuffer.length} transações importadas com sucesso!`);
+    showToast(`✓ ${total} transações importadas`, 'verde');
   } catch(e) {
-    showLoading(false);
+    prog.classList.add('hidden');
     alert('Erro ao importar: ' + e.message);
   }
+}
+
+/* ---- showModalMapeamento: abre modal estático com selects populados ---- */
+function showModalMapeamento(rows, fileName, callback) {
+  const header = (rows[0] || []).map((h, i) => `<option value="${i}">${h || 'Coluna '+(i+1)}</option>`).join('');
+  ['map-data','map-desc','map-valor'].forEach(id => {
+    const el = document.getElementById(id);
+    el.innerHTML = '<option value="-1">— Selecione —</option>' + header;
+  });
+  document.getElementById('mapeamento-titulo').textContent = 'Mapear colunas — ' + fileName;
+  window.mapeamentoPendente = { rows, fileName, callback };
+  openModal('mapeamento');
+}
+
+function confirmarMapeamento() {
+  const iData  = parseInt(document.getElementById('map-data').value);
+  const iDesc  = parseInt(document.getElementById('map-desc').value);
+  const iValor = parseInt(document.getElementById('map-valor').value);
+  if (iData < 0 || iDesc < 0 || iValor < 0) {
+    showToast('Selecione as três colunas', 'amarelo'); return;
+  }
+  closeModal('mapeamento');
+  if (window.mapeamentoPendente?.callback) {
+    window.mapeamentoPendente.callback({ data: iData, desc: iDesc, valor: iValor });
+  }
+  window.mapeamentoPendente = null;
 }
 
 /* ============================================================
