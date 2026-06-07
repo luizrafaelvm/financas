@@ -30,6 +30,7 @@ function renderSection(id) {
 }
 
 function renderAll() {
+  S._cache = {};
   initMesSelect();
   initCatFilter();
   updateHeaderBalance();
@@ -46,8 +47,11 @@ function renderHome() {
   const { receitas, despesas, saldo, renda, comprometimento, maiorGasto }
     = resumoMes(mes);
 
-  // Só recriar chart se mês mudou
-  if (S._lastRenderedMes !== mes) {
+  const mesaMudou = S._lastRenderedMes !== mes;
+  if (!mesaMudou && S.charts.donut) {
+    updateHeaderBalance();
+  }
+  if (mesaMudou) {
     destroyChart('donut');
     destroyChart('area');
     S._lastRenderedMes = mes;
@@ -335,93 +339,100 @@ function destroyChart(key) {
    LANÇAMENTOS
    ============================================================ */
 function renderLancamentos() {
-  const search  = (document.getElementById('search-input')?.value||'').toLowerCase();
-  const tipo    = document.getElementById('filter-tipo')?.value||'';
-  const cat     = document.getElementById('filter-cat')?.value||'';
-  const conta   = document.getElementById('filter-conta')?.value||'';
+  const search = (document.getElementById('search-input')?.value||'')
+    .toLowerCase();
+  const tipo   = document.getElementById('filter-tipo')?.value||'';
+  const cat    = document.getElementById('filter-cat')?.value||'';
+  const conta  = document.getElementById('filter-conta')?.value||'';
 
   let txs = txsMes(S.mesAtual);
   if (search) txs = txs.filter(t =>
     t.descricao.toLowerCase().includes(search) ||
-    (t.categoria||'').toLowerCase().includes(search)
-  );
+    (t.categoria||'').toLowerCase().includes(search));
   if (tipo)  txs = txs.filter(t => t.tipo === tipo);
   if (cat)   txs = txs.filter(t => t.categoria === cat);
   if (conta) txs = txs.filter(t => t.conta === conta);
-  txs = txs.sort((a,b) => new Date(b.data) - new Date(a.data));
+  txs = txs.sort((a,b) => {
+    const da = a.data instanceof Date ? a.data : new Date(a.data||0);
+    const db = b.data instanceof Date ? b.data : new Date(b.data||0);
+    return db - da;
+  });
 
-  const total    = txs.length;
-  const perPage  = S.itensPorPagina;
-  const paginas  = Math.max(1, Math.ceil(total / perPage));
-
+  const total   = txs.length;
+  const perPage = S.itensPorPagina || 50;
+  const paginas = Math.max(1, Math.ceil(total / perPage));
   if (S.paginaLancamentos > paginas) S.paginaLancamentos = 1;
-  const inicio = (S.paginaLancamentos - 1) * perPage;
-  const fim    = Math.min(inicio + perPage, total);
-  const txsPag = txs.slice(inicio, fim);
+  const inicio  = (S.paginaLancamentos - 1) * perPage;
+  const fim     = Math.min(inicio + perPage, total);
+  const txsPag  = txs.slice(inicio, fim);
 
   const body = document.getElementById('lancamentos-body');
   if (!total) {
     body.innerHTML = `<tr><td colspan="6" style="text-align:center;
-      padding:32px;color:var(--text3)">Nenhum lançamento encontrado</td></tr>`;
+      padding:32px;color:var(--text3)">
+      Nenhum lançamento encontrado</td></tr>`;
     document.getElementById('lancamentos-count').innerHTML = '';
     return;
   }
 
-  const rows = txsPag.map(t => {
-    const cor  = t.tipo==='receita' ? 'var(--green)' : 'var(--red)';
-    const sinal= t.tipo==='receita' ? '+' : '-';
-    const origMap = {
-      'cartao-automatico':'🤖 Auto','manual':'✍️ Manual',
-      'csv-import':'📄 CSV','ofx-import':'📄 OFX','sms-automatico':'📱 SMS'
-    };
-    const orig = origMap[t.origem] || '•';
+  const origMap = {
+    'cartao-automatico':'🤖 Auto','manual':'✍️ Manual',
+    'csv-import':'📄 CSV','ofx-import':'📄 OFX',
+    'sms-automatico':'📱 SMS'
+  };
+
+  body.innerHTML = txsPag.map(t => {
+    const cor  = t.tipo==='receita'?'var(--green)':'var(--red)';
+    const sinal= t.tipo==='receita'?'+':'-';
     const dot  = `<span style="width:9px;height:9px;border-radius:50%;
       background:${CORES[t.categoria]||'#8E8E93'};
-      display:inline-block;flex-shrink:0"></span>`;
+      display:inline-block;margin-right:6px;flex-shrink:0"></span>`;
     const sub  = t.subcategoria && t.subcategoria !== 'Não categorizado'
-      ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>` : '';
+      ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>`:'';
+    const nfIcon = t.observacao && t.observacao.startsWith('NF:') ? ` 🧾` : '';
     return `<tr>
       <td style="color:var(--text2);font-size:12px;white-space:nowrap">
         ${fmtData(t.data)}</td>
-      <td><div style="font-size:13px">${t.descricao}</div>${sub}</td>
-      <td><div style="display:flex;align-items:center;gap:6px">
-        ${dot}<span style="font-size:12px">${t.categoria}</span></div></td>
+      <td>
+        <div style="font-size:13px">${t.descricao}${nfIcon}</div>${sub}
+      </td>
+      <td><div style="display:flex;align-items:center">
+        ${dot}<span style="font-size:12px">${t.categoria}</span>
+      </div></td>
       <td><span style="background:rgba(255,255,255,.07);
         border-radius:8px;padding:2px 8px;font-size:11px">
         ${t.conta}</span></td>
-      <td style="font-size:12px;color:var(--text2)">${orig}</td>
+      <td style="font-size:12px;color:var(--text2)">
+        ${origMap[t.origem]||'•'}</td>
       <td style="text-align:right;font-family:'DM Mono',monospace;
         color:${cor};font-size:14px;white-space:nowrap">
         ${sinal}${fmtBRL(t.valor)}</td>
     </tr>`;
-  });
-  body.innerHTML = rows.join('');
+  }).join('');
 
   document.getElementById('lancamentos-count').innerHTML = `
     <div style="display:flex;justify-content:space-between;
-      align-items:center;flex-wrap:wrap;gap:8px">
-      <span>${total} lançamento${total!==1?'s':''} ·
-        mostrando ${inicio+1}–${fim}</span>
+      align-items:center;flex-wrap:wrap;gap:8px;padding:4px 0">
+      <span style="font-size:12px;color:var(--text3)">
+        ${total} lançamentos · mostrando ${inicio+1}–${fim}</span>
       <div style="display:flex;align-items:center;gap:8px">
         <button class="btn btn-secondary btn-sm"
           onclick="irPagina(${S.paginaLancamentos-1})"
-          ${S.paginaLancamentos<=1?'disabled':''}>‹ Anterior</button>
+          ${S.paginaLancamentos<=1?'disabled':''}>‹</button>
         <span style="font-size:12px;color:var(--text2)">
           ${S.paginaLancamentos} / ${paginas}</span>
         <button class="btn btn-secondary btn-sm"
           onclick="irPagina(${S.paginaLancamentos+1})"
-          ${S.paginaLancamentos>=paginas?'disabled':''}>Próxima ›</button>
+          ${S.paginaLancamentos>=paginas?'disabled':''}>›</button>
       </div>
     </div>`;
 }
 
 function irPagina(n) {
-  const txs    = txsMes(S.mesAtual);
-  const paginas = Math.max(1, Math.ceil(txs.length / S.itensPorPagina));
-  S.paginaLancamentos = Math.max(1, Math.min(n, paginas));
+  const txs = txsMes(S.mesAtual);
+  const max = Math.max(1,Math.ceil(txs.length/(S.itensPorPagina||50)));
+  S.paginaLancamentos = Math.max(1, Math.min(n, max));
   renderLancamentos();
-  document.getElementById('lancamentos-body')
-    ?.closest('.card')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function initCatFilter() {

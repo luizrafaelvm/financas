@@ -173,7 +173,7 @@
         <button class="btn btn-primary btn-sm" onclick="openModal('lancamento')">+ Novo</button>
       </div>
       <div class="filters-row">
-        <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="S.paginaLancamentos=1;renderLancamentosDebounced()">
+        <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="S.paginaLancamentos=1;clearTimeout(window._st);window._st=setTimeout(renderLancamentos,280)">
         <select class="filter-select" id="filter-tipo" onchange="S.paginaLancamentos=1;renderLancamentos()">
           <option value="">Todos os tipos</option>
           <option value="despesa">Despesa</option>
