@@ -11,7 +11,7 @@ const CLIENT_ID    = 'a68a8517-a38f-42a2-b487-02945681c354';
 const TENANT_ID    = '5c9eb6f9-84b8-49fc-a9f4-3f00f62dfe78';
 const REDIRECT_URI = 'https://luizrafaelvm.github.io/financas/';
 const FILE_PATH    = '/Financeiro/financas-rafael.xlsx';
-const SHEET_DADOS  = 'Dados';
+const SHEET_DADOS  = 'Lançamentos';
 const SHEET_METAS  = 'Metas';
 const SHEET_CFG    = 'Configurações';
 

@@ -73,31 +73,38 @@ function parseDados(raw) {
     const r = raw[i];
     if (!r || r.every(c => c === null || c === '' || c === undefined)) continue;
 
-    const colA = r[0],  colB = r[1],  colC = r[2],  colD = r[3];
-    const colE = r[4],  colH = r[7];
-    const colI = r[8],  colJ = r[9],  colK = r[10], colL = r[11];
-    const colM = r[12], colN = r[13], colO = r[14], colP = r[15];
+    const colA = r[0];   // ID
+    const colB = r[1];   // Data (formato Date object ou string)
+    const colC = r[2];   // Descrição
+    const colD = r[3];   // Valor (número com sinal — negativo = despesa)
+    const colE = r[4];   // Tipo (receita/despesa)
+    const colF = r[5];   // Categoria
+    const colG = r[6];   // Subcategoria
+    const colH = r[7];   // Conta
+    const colI = r[8];   // Origem
+    const colJ = r[9];   // Observação
+    const colK = r[10];  // Mês/Ano
 
-    const valor = parseValorBR(colD);
-    const { cat, sub } = colJ
-      ? { cat: String(colJ), sub: String(colK || '') }
-      : categorizar(String(colC || ''));
-    const tipo  = colI || (cat === 'Receitas' ? 'receita' : 'despesa');
-    const conta = colL || mapCartao(colE);
-    const mesAno = colN ? String(colN) : S.mesAtual;
-    const data   = reconstructDate(colA, mesAno);
-    const id     = colP || idCount++;
+    const id       = colA || idCount++;
+    const valor    = parseValorBR(colD);
+    const tipo     = colE || (valor < 0 ? 'despesa' : 'receita');
+    const cat      = colF ? String(colF) : categorizar(String(colC||'')).cat;
+    const sub      = colG ? String(colG) : categorizar(String(colC||'')).sub;
+    const conta    = colH ? String(colH) : 'itau-cartao';
+    const origem   = colI ? String(colI) : 'manual';
+    const obs      = colJ ? String(colJ) : '';
+    const mesAno   = colK ? String(colK) : getMesAtual();
+    const data     = colB ? new Date(colB) : new Date();
 
     txs.push({
       id, rowIndex: i + 1,
-      data, hora: colB || '',
-      descricao: String(colC || ''),
-      valor, valorSigned: tipo === 'despesa' ? -valor : valor,
+      data, descricao: String(colC || ''),
+      valor: Math.abs(valor),
+      valorSigned: tipo === 'receita' ? Math.abs(valor) : -Math.abs(valor),
       tipo, categoria: cat, subcategoria: sub,
-      conta, origem: String(colM || 'cartao-automatico'),
-      observacao: String(colH || ''),
-      mesAno, idNF: String(colO || ''),
-      categorizadoNoExcel: !!colJ
+      conta, origem, observacao: obs,
+      mesAno, idNF: '', hora: '',
+      categorizadoNoExcel: !!colF
     });
   }
   return txs;

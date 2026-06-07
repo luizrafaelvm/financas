@@ -62,7 +62,7 @@ O dashboard busca o arquivo nesta sequência:
 2. Path `/me/drive/root:/Financeiro/financas-rafael.xlsx`
 3. Search por nome `financas-rafael.xlsx`
 
-### 4.1 Aba `Dados` — transações (NÃO renomear esta aba)
+### 4.1 Aba `Lançamentos` — transações (NÃO renomear esta aba)
 
 Colunas **A–H são bloqueadas** — vêm do arquivo `GastosCartao.xlsx` automaticamente. **Nunca alterar a lógica que lê ou escreve essas colunas.**
 

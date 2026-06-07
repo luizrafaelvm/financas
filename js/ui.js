@@ -59,10 +59,12 @@ async function saveLancamento() {
   const d     = new Date(data);
   const mesAno = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   const id    = Date.now();
-  const row   = [
-    `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
-    '00h00', desc, valor.toFixed(2), '', '', '', obs,
-    tipo, cat, sub, conta, 'manual', mesAno, '', id
+  const row = [
+    id,
+    `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`,
+    desc,
+    tipo === 'despesa' ? -valor : valor,
+    tipo, cat, sub, conta, 'manual', obs, mesAno
   ];
 
   showLoading(true, 'Salvando lançamento...');
