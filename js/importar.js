@@ -572,6 +572,7 @@ async function confirmImport() {
 
   try {
     let done = 0;
+    let loteCount = 0;
     for (let i = 0; i < total; i += 50) {
       const batch = S.importBuffer.slice(i, i + 50);
       for (const t of batch) {
@@ -596,6 +597,12 @@ async function confirmImport() {
       bar.style.width = pct + '%';
       txt.textContent = `Gravando ${done} / ${total}...`;
       await new Promise(r => setTimeout(r, 0));
+      loteCount++;
+      // Renovar sessão a cada 10 lotes para evitar expiração
+      if (loteCount % 10 === 0) {
+        S.workbookSessionId = null;
+        await createWorkbookSession();
+      }
     }
     prog.classList.add('hidden');
     cancelImport();

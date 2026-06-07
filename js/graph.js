@@ -24,13 +24,30 @@ async function graphFetch(endpoint, opts = {}) {
     S.token = await getToken(); // refresh and retry
     return graphFetch(endpoint, opts);
   }
-  // Sessão do workbook expirada (tipicamente após 5 minutos de inatividade)
-  if (res.status === 404 && S.workbookSessionId) {
-    const errText = await res.clone().text();
-    if (errText.includes('InvalidSession') || errText.includes('session')) {
-      console.warn('Sessão do workbook expirada. Renovando...');
+  // Sessão inválida — criar nova e retry
+  if ((res.status === 400 || res.status === 404) && S.workbookSessionId) {
+    let errBody = '';
+    try { errBody = await res.clone().text(); } catch {}
+    if (errBody.includes('InvalidSession') || errBody.includes('invalidSession')) {
+      console.warn('Sessão inválida. Criando nova sessão e retentando...');
+      S.workbookSessionId = null;
       await createWorkbookSession();
-      return graphFetch(endpoint, opts);
+      // Retry uma vez com sessão nova
+      const retry = await fetch(`https://graph.microsoft.com/v1.0${endpoint}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${S.token}`,
+          'Content-Type': 'application/json',
+          ...(S.workbookSessionId ? { 'workbook-session-id': S.workbookSessionId } : {})
+        },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (retry.status === 204 || raw) return null;
+      if (!retry.ok) {
+        const retryErr = await retry.text();
+        throw new Error(`Graph ${retry.status}: ${retryErr.substring(0,200)}`);
+      }
+      return retry.json();
     }
   }
   if (!res.ok) {
@@ -66,17 +83,8 @@ async function createWorkbookSession() {
       { method: 'POST', body: { persistChanges: true } }
     );
     S.workbookSessionId = res?.id || null;
-    if (S.workbookSessionId) {
-      console.log('Workbook session criada:', S.workbookSessionId.substring(0,20)+'...');
-    }
   } catch(e) {
-    if (e.message.includes('locked') || e.message.includes('conflict') ||
-        e.message.includes('CORS') || e.message.includes('fetch')) {
-      showToast(
-        '⚠️ Feche o arquivo Excel Online para habilitar gravação',
-        'amarelo'
-      );
-    }
+    console.warn('Sessão workbook não criada — operando sem sessão:', e.message);
     S.workbookSessionId = null;
   }
 }
@@ -118,15 +126,37 @@ async function ensureSheet(name, headers) {
 
 /* ---- Escrever linha ao final ---- */
 async function appendRow(sheetName, values) {
-  const rangeData = await graphFetch(
-    `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
-  );
-  const nextRow = (rangeData?.rowCount || 1) + 1;
-  const colEnd  = String.fromCharCode(64 + values.length);
-  await graphFetch(
-    `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${nextRow}:${colEnd}${nextRow}')`,
-    { method: 'PATCH', body: { values: [values] } }
-  );
+  // Garantir sessão válida antes de escrever
+  if (!S.workbookSessionId) {
+    await createWorkbookSession();
+  }
+  try {
+    const rangeData = await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
+    );
+    const nextRow = (rangeData?.rowCount || 1) + 1;
+    const colEnd  = String.fromCharCode(64 + values.length);
+    await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${nextRow}:${colEnd}${nextRow}')`,
+      { method: 'PATCH', body: { values: [values] } }
+    );
+  } catch(e) {
+    // Se sessão expirou, tentar sem sessão
+    if (e.message.includes('InvalidSession') || e.message.includes('invalidSession')) {
+      S.workbookSessionId = null;
+      const rangeData = await graphFetch(
+        `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
+      );
+      const nextRow = (rangeData?.rowCount || 1) + 1;
+      const colEnd  = String.fromCharCode(64 + values.length);
+      await graphFetch(
+        `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${nextRow}:${colEnd}${nextRow}')`,
+        { method: 'PATCH', body: { values: [values] } }
+      );
+    } else {
+      throw e;
+    }
+  }
 }
 
 /* ---- Atualizar células I-O de uma linha ---- */
