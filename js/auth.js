@@ -47,6 +47,7 @@ async function doLogin() {
 async function doLogout() {
   if (!confirm('Deseja sair da conta Microsoft?')) return;
   localStorage.removeItem('rfm_file_id');
+  await closeWorkbookSession();
   await msalInstance.logoutRedirect();
 }
 
@@ -86,6 +87,7 @@ async function loadAllData() {
   showLoading(true, 'Localizando arquivo...');
   try {
     await findFile();
+    await createWorkbookSession();
     showLoading(true, 'Criando estrutura...');
     await ensureSheet(SHEET_METAS, ['Categoria','Teto Mensal','Alerta em %']);
     await ensureSheet(SHEET_CFG, ['Chave','Valor']);

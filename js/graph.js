@@ -10,17 +10,28 @@
 async function graphFetch(endpoint, opts = {}) {
   if (!S.token) S.token = await getToken();
   const { method = 'GET', body, raw = false } = opts;
+  const headers = {
+    Authorization: `Bearer ${S.token}`,
+    'Content-Type': 'application/json',
+    ...(S.workbookSessionId ? { 'workbook-session-id': S.workbookSessionId } : {})
+  };
   const res = await fetch(`https://graph.microsoft.com/v1.0${endpoint}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${S.token}`,
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
   if (res.status === 401) {
     S.token = await getToken(); // refresh and retry
     return graphFetch(endpoint, opts);
+  }
+  // Sessão do workbook expirada (tipicamente após 5 minutos de inatividade)
+  if (res.status === 404 && S.workbookSessionId) {
+    const errText = await res.clone().text();
+    if (errText.includes('InvalidSession') || errText.includes('session')) {
+      console.warn('Sessão do workbook expirada. Renovando...');
+      await createWorkbookSession();
+      return graphFetch(endpoint, opts);
+    }
   }
   if (!res.ok) {
     const text = await res.text();
@@ -45,6 +56,40 @@ async function findFile() {
   const f = search?.value?.find(i => i.name === 'financas-rafael.xlsx');
   if (f) { S.fileId = f.id; localStorage.setItem('rfm_file_id', f.id); return; }
   throw new Error('Arquivo financas-rafael.xlsx não encontrado. Verifique se está em OneDrive/Financeiro/.');
+}
+
+/* ---- Criar sessão do workbook ---- */
+async function createWorkbookSession() {
+  try {
+    const res = await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/createSession`,
+      { method: 'POST', body: { persistChanges: true } }
+    );
+    S.workbookSessionId = res?.id || null;
+    if (S.workbookSessionId) {
+      console.log('Workbook session criada:', S.workbookSessionId.substring(0,20)+'...');
+    }
+  } catch(e) {
+    if (e.message.includes('locked') || e.message.includes('conflict') ||
+        e.message.includes('CORS') || e.message.includes('fetch')) {
+      showToast(
+        '⚠️ Feche o arquivo Excel Online para habilitar gravação',
+        'amarelo'
+      );
+    }
+    S.workbookSessionId = null;
+  }
+}
+
+async function closeWorkbookSession() {
+  if (!S.workbookSessionId) return;
+  try {
+    await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/closeSession`,
+      { method: 'POST' }
+    );
+  } catch {}
+  S.workbookSessionId = null;
 }
 
 /* ---- Ler aba ---- */
