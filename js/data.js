@@ -241,22 +241,31 @@ function txsMes(mesAno) {
 }
 
 function resumoMes(mesAno) {
+  const cacheKey = `resumo_${mesAno}_${S.transactions.length}`;
+  if (S._cache[cacheKey]) return S._cache[cacheKey];
   const txs = txsMes(mesAno);
-  const receitas  = txs.filter(t=>t.tipo==='receita').reduce((s,t)=>s+t.valor,0);
-  const despesas  = txs.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
-  const saldo     = receitas - despesas;
-  const renda     = parseFloat(S.config?.renda_mensal_estimada) || (receitas || 1);
-  const maiorGasto= txs.filter(t=>t.tipo==='despesa').sort((a,b)=>b.valor-a.valor)[0];
-  return { receitas, despesas, saldo, renda,
-           comprometimento: (despesas/renda)*100, maiorGasto };
+  const receitas   = txs.filter(t=>t.tipo==='receita').reduce((s,t)=>s+t.valor,0);
+  const despesas   = txs.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
+  const saldo      = receitas - despesas;
+  const renda      = parseFloat(S.config?.renda_mensal_estimada)||(receitas||1);
+  const maiorGasto = txs.filter(t=>t.tipo==='despesa')
+    .sort((a,b)=>b.valor-a.valor)[0];
+  const result = { receitas, despesas, saldo, renda,
+    comprometimento:(despesas/renda)*100, maiorGasto };
+  S._cache[cacheKey] = result;
+  return result;
 }
 
 function gastosPorCategoria(mesAno) {
+  const cacheKey = `cats_${mesAno}_${S.transactions.length}`;
+  if (S._cache[cacheKey]) return S._cache[cacheKey];
   const map = {};
   txsMes(mesAno).filter(t=>t.tipo==='despesa').forEach(t => {
     map[t.categoria] = (map[t.categoria]||0) + t.valor;
   });
-  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  const result = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  S._cache[cacheKey] = result;
+  return result;
 }
 
 function mesesToDisplay() {

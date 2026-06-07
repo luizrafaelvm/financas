@@ -31,14 +31,26 @@ function renderSection(id) {
 
 function renderAll() {
   initMesSelect();
-  renderHome();
   initCatFilter();
+  updateHeaderBalance();
+  const secAtiva = document.querySelector('.section.active');
+  const idAtivo  = secAtiva?.id?.replace('sec-','') || 'home';
+  renderSection(idAtivo);
 }
 
 /* ============================================================
    HOME
    ============================================================ */
 function renderHome() {
+  const mesaMudou = S._lastRenderedMes !== S.mesAtual;
+  if (!mesaMudou && S.charts.donut && S.charts.area) {
+    updateHeaderBalance();
+    return;
+  }
+  S._lastRenderedMes = S.mesAtual;
+  destroyChart('donut');
+  destroyChart('area');
+
   const mes = S.mesAtual;
   const { receitas, despesas, saldo, renda, comprometimento, maiorGasto } = resumoMes(mes);
 
@@ -267,7 +279,10 @@ function renderAlertas(mes) {
 }
 
 function destroyChart(key) {
-  if (S.charts[key]) { S.charts[key].destroy(); delete S.charts[key]; }
+  if (S.charts[key]) {
+    try { S.charts[key].destroy(); } catch {}
+    delete S.charts[key];
+  }
 }
 
 /* ============================================================
@@ -280,48 +295,87 @@ function renderLancamentos() {
   const conta   = document.getElementById('filter-conta')?.value||'';
 
   let txs = txsMes(S.mesAtual);
-  if (search)  txs = txs.filter(t=>t.descricao.toLowerCase().includes(search));
-  if (tipo)    txs = txs.filter(t=>t.tipo===tipo);
-  if (cat)     txs = txs.filter(t=>t.categoria===cat);
-  if (conta)   txs = txs.filter(t=>t.conta===conta);
-  txs = txs.sort((a,b)=>b.data-a.data);
+  if (search) txs = txs.filter(t =>
+    t.descricao.toLowerCase().includes(search) ||
+    (t.categoria||'').toLowerCase().includes(search)
+  );
+  if (tipo)  txs = txs.filter(t => t.tipo === tipo);
+  if (cat)   txs = txs.filter(t => t.categoria === cat);
+  if (conta) txs = txs.filter(t => t.conta === conta);
+  txs = txs.sort((a,b) => new Date(b.data) - new Date(a.data));
+
+  const total    = txs.length;
+  const perPage  = S.itensPorPagina;
+  const paginas  = Math.max(1, Math.ceil(total / perPage));
+
+  if (S.paginaLancamentos > paginas) S.paginaLancamentos = 1;
+  const inicio = (S.paginaLancamentos - 1) * perPage;
+  const fim    = Math.min(inicio + perPage, total);
+  const txsPag = txs.slice(inicio, fim);
 
   const body = document.getElementById('lancamentos-body');
-  if (!txs.length) {
-    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">Nenhum lançamento encontrado</td></tr>`;
-    document.getElementById('lancamentos-count').textContent = '';
+  if (!total) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;
+      padding:32px;color:var(--text3)">Nenhum lançamento encontrado</td></tr>`;
+    document.getElementById('lancamentos-count').innerHTML = '';
     return;
   }
 
-  body.innerHTML = txs.map(t => {
-    const cor   = t.tipo==='receita' ? 'var(--green)' : 'var(--red)';
-    const sinal = t.tipo==='receita' ? '+' : '-';
+  const rows = txsPag.map(t => {
+    const cor  = t.tipo==='receita' ? 'var(--green)' : 'var(--red)';
+    const sinal= t.tipo==='receita' ? '+' : '-';
     const origMap = {
-      'cartao-automatico': '🤖 Auto',
-      'manual':            '✍️ Manual',
-      'csv-import':        '📄 CSV',
-      'ofx-import':        '📄 OFX',
-      'sms-automatico':    '📱 SMS'
+      'cartao-automatico':'🤖 Auto','manual':'✍️ Manual',
+      'csv-import':'📄 CSV','ofx-import':'📄 OFX','sms-automatico':'📱 SMS'
     };
-    const origLabel = origMap[t.origem] || '• ' + (t.origem || 'desconhecido');
-    const dot   = `<span class="cat-dot" style="background:${CORES[t.categoria]||'#8E8E93'}"></span>`;
+    const orig = origMap[t.origem] || '•';
+    const dot  = `<span style="width:9px;height:9px;border-radius:50%;
+      background:${CORES[t.categoria]||'#8E8E93'};
+      display:inline-block;flex-shrink:0"></span>`;
+    const sub  = t.subcategoria && t.subcategoria !== 'Não categorizado'
+      ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>` : '';
     return `<tr>
-      <td style="color:var(--text2);font-size:12px;white-space:nowrap">${fmtData(t.data)}</td>
-      <td>
-        <div style="font-size:13px">${t.descricao}</div>
-        ${t.subcategoria && !t.subcategoria.includes('-') && t.subcategoria !== 'Não categorizado'
-          ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>`
-          : ''}
-      </td>
-      <td><div style="display:flex;align-items:center;gap:6px">${dot}<span style="font-size:12px">${t.categoria}</span></div></td>
-      <td><span class="badge badge-gray" style="font-size:10px">${t.conta}</span></td>
-      <td style="font-size:12px;color:var(--text2)">${origLabel}</td>
-      <td style="text-align:right;font-family:'DM Mono',monospace;color:${cor};font-size:14px;white-space:nowrap">
-        ${sinal}${fmtBRL(t.valor)}
-      </td>
+      <td style="color:var(--text2);font-size:12px;white-space:nowrap">
+        ${fmtData(t.data)}</td>
+      <td><div style="font-size:13px">${t.descricao}</div>${sub}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">
+        ${dot}<span style="font-size:12px">${t.categoria}</span></div></td>
+      <td><span style="background:rgba(255,255,255,.07);
+        border-radius:8px;padding:2px 8px;font-size:11px">
+        ${t.conta}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${orig}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;
+        color:${cor};font-size:14px;white-space:nowrap">
+        ${sinal}${fmtBRL(t.valor)}</td>
     </tr>`;
-  }).join('');
-  document.getElementById('lancamentos-count').textContent = `${txs.length} lançamento${txs.length!==1?'s':''} · ${fmtBRL(txs.reduce((s,t)=>s+t.valorSigned,0))} no período`;
+  });
+  body.innerHTML = rows.join('');
+
+  document.getElementById('lancamentos-count').innerHTML = `
+    <div style="display:flex;justify-content:space-between;
+      align-items:center;flex-wrap:wrap;gap:8px">
+      <span>${total} lançamento${total!==1?'s':''} ·
+        mostrando ${inicio+1}–${fim}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-secondary btn-sm"
+          onclick="irPagina(${S.paginaLancamentos-1})"
+          ${S.paginaLancamentos<=1?'disabled':''}>‹ Anterior</button>
+        <span style="font-size:12px;color:var(--text2)">
+          ${S.paginaLancamentos} / ${paginas}</span>
+        <button class="btn btn-secondary btn-sm"
+          onclick="irPagina(${S.paginaLancamentos+1})"
+          ${S.paginaLancamentos>=paginas?'disabled':''}>Próxima ›</button>
+      </div>
+    </div>`;
+}
+
+function irPagina(n) {
+  const txs    = txsMes(S.mesAtual);
+  const paginas = Math.max(1, Math.ceil(txs.length / S.itensPorPagina));
+  S.paginaLancamentos = Math.max(1, Math.min(n, paginas));
+  renderLancamentos();
+  document.getElementById('lancamentos-body')
+    ?.closest('.card')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function initCatFilter() {
@@ -501,6 +555,7 @@ function initMesSelect() {
 
 function onMesChange(mesAno) {
   S.mesAtual = mesAno;
+  S._lastRenderedMes = null;
   const active = document.querySelector('.section.active');
   const secId  = active?.id?.replace('sec-','');
   if (secId) renderSection(secId);
@@ -524,3 +579,16 @@ function updateHeaderBalance() {
   el.textContent = fmtBRL(saldo);
   el.style.color = saldo >= 0 ? 'var(--green)' : 'var(--red)';
 }
+
+/* ============================================================
+   DEBOUNCE
+   ============================================================ */
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+const renderLancamentosDebounced = debounce(renderLancamentos, 250);

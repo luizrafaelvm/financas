@@ -110,7 +110,11 @@ const S = {
   gastosCartaoFileId:  localStorage.getItem('rfm_gastoscartao_id') || null,
   gastosCartaoAnoBase: parseInt(localStorage.getItem('rfm_gastoscartao_anobase')) || (new Date().getFullYear() - 3),
   workbookSessionId:   null,
-  patrimonio:          []
+  patrimonio:          [],
+  paginaLancamentos:   1,
+  itensPorPagina:      50,
+  _cache:              {},
+  _lastRenderedMes:    null
 };
 
 /* ============================================================

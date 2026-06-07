@@ -118,16 +118,16 @@
         <button class="btn btn-primary btn-sm" onclick="openModal('lancamento')">+ Novo</button>
       </div>
       <div class="filters-row">
-        <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="renderLancamentos()">
-        <select class="filter-select" id="filter-tipo" onchange="renderLancamentos()">
+        <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="S.paginaLancamentos=1;renderLancamentosDebounced()">
+        <select class="filter-select" id="filter-tipo" onchange="S.paginaLancamentos=1;renderLancamentos()">
           <option value="">Todos os tipos</option>
           <option value="despesa">Despesa</option>
           <option value="receita">Receita</option>
         </select>
-        <select class="filter-select" id="filter-cat" onchange="renderLancamentos()">
+        <select class="filter-select" id="filter-cat" onchange="S.paginaLancamentos=1;renderLancamentos()">
           <option value="">Todas as categorias</option>
         </select>
-        <select class="filter-select" id="filter-conta" onchange="renderLancamentos()">
+        <select class="filter-select" id="filter-conta" onchange="S.paginaLancamentos=1;renderLancamentos()">
           <option value="">Todas as contas</option>
           <option value="itau-cartao">Itaú Cartão</option>
           <option value="itau-corrente">Itaú Corrente</option>
