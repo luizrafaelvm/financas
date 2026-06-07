@@ -416,6 +416,17 @@ Token renovado silenciosamente via `acquireTokenSilent()`. Em caso de falha, red
 ### CDN adicionado
 SheetJS: https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
 
+### Aba Recorrentes
+- Criada automaticamente no primeiro acesso
+- Colunas: ID, Descricao, Categoria, Subcategoria, Conta, Tipo,
+  Valor, DiaVencimento, Variavel (sim/nao), Ativo, Observacao,
+  UltimoValor, UltimoPagamento
+- Recorrentes fixos: Variavel = 'nao', Valor fixo mensal
+- Recorrentes variáveis: Variavel = 'sim', Valor = média histórica
+- parseRecorrentes() em data.js
+- detectarRecorrentes() detecta padrões nos últimos 3 meses
+- salvarRecorrente() e atualizarRecorrente() em graph.js
+
 ---
 
 ## 17. ESTRUTURA DE ARQUIVOS (pós-modularização)

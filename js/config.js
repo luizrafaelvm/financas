@@ -111,6 +111,7 @@ const S = {
   gastosCartaoAnoBase: parseInt(localStorage.getItem('rfm_gastoscartao_anobase')) || (new Date().getFullYear() - 3),
   workbookSessionId:   null,
   patrimonio:          [],
+  recorrentes:         [],
   paginaLancamentos:   1,
   itensPorPagina:      50,
   _cache:              {},

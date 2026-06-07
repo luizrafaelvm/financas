@@ -236,6 +236,74 @@ function parsePatrimonio(raw) {
   return itens;
 }
 
+function parseRecorrentes(raw) {
+  if (!raw || raw.length < 2) return [];
+  const lista = [];
+  for (let i = 1; i < raw.length; i++) {
+    const r = raw[i];
+    if (!r || !r[1]) continue;
+    lista.push({
+      id:              r[0] || i,
+      descricao:       String(r[1] || ''),
+      categoria:       String(r[2] || 'Outros'),
+      subcategoria:    String(r[3] || ''),
+      conta:           String(r[4] || 'itau-corrente'),
+      tipo:            String(r[5] || 'despesa'),
+      valor:           parseFloat(r[6]) || 0,
+      diaVencimento:   parseInt(r[7]) || 1,
+      variavel:        String(r[8] || 'nao').toLowerCase() === 'sim',
+      ativo:           String(r[9] || 'sim').toLowerCase() !== 'nao',
+      observacao:      String(r[10] || ''),
+      ultimoValor:     parseFloat(r[11]) || 0,
+      ultimoPagamento: r[12] ? String(r[12]) : ''
+    });
+  }
+  return lista;
+}
+
+function detectarRecorrentes() {
+  const mesesRecentes = mesesToDisplay().slice(0, 3);
+  const contagem = {};
+
+  mesesRecentes.forEach(mes => {
+    txsMes(mes).filter(t => t.tipo === 'despesa').forEach(t => {
+      const chave = t.descricao.toUpperCase().trim().substring(0, 30);
+      if (!contagem[chave]) {
+        contagem[chave] = {
+          descricao: t.descricao,
+          categoria: t.categoria,
+          subcategoria: t.subcategoria,
+          conta: t.conta,
+          ocorrencias: [],
+          valores: []
+        };
+      }
+      contagem[chave].ocorrencias.push(mes);
+      contagem[chave].valores.push(t.valor);
+    });
+  });
+
+  return Object.values(contagem)
+    .filter(c => c.ocorrencias.length >= 2)
+    .map(c => {
+      const valorMedio = c.valores.reduce((s,v)=>s+v,0) / c.valores.length;
+      const variavel   = Math.max(...c.valores) - Math.min(...c.valores) > 5;
+      return {
+        descricao:    c.descricao,
+        categoria:    c.categoria,
+        subcategoria: c.subcategoria,
+        conta:        c.conta,
+        valor:        parseFloat(valorMedio.toFixed(2)),
+        variavel,
+        ocorrencias:  c.ocorrencias.length,
+        jaRegistrado: S.recorrentes.some(r =>
+          r.descricao.toUpperCase().includes(c.descricao.toUpperCase().substring(0,15))
+        )
+      };
+    })
+    .sort((a,b) => b.valor - a.valor);
+}
+
 function txsMes(mesAno) {
   return S.transactions.filter(t => t.mesAno === mesAno);
 }

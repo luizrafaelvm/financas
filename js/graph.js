@@ -220,6 +220,54 @@ function showToast(mensagem, tipo) {
 }
 
 /* ============================================================
+   RECORRENTES — CRUD
+   ============================================================ */
+async function salvarRecorrente(rec) {
+  const id = Date.now();
+  const row = [
+    id,
+    rec.descricao || '',
+    rec.categoria || 'Outros',
+    rec.subcategoria || '',
+    rec.conta || 'itau-corrente',
+    rec.tipo || 'despesa',
+    rec.valor || 0,
+    rec.diaVencimento || 1,
+    rec.variavel ? 'sim' : 'nao',
+    'sim',
+    rec.observacao || '',
+    rec.valor || 0,
+    ''
+  ];
+  await appendRows('Recorrentes', [row]);
+  S.recorrentes.push({ ...rec, id, ativo: true });
+  S._cache = {};
+}
+
+async function atualizarRecorrente(id, campos) {
+  const raw = await getSheetValues('Recorrentes');
+  if (!raw) return;
+  let rowNum = -1;
+  for (let i = 1; i < raw.length; i++) {
+    if (String(raw[i][0]) === String(id)) { rowNum = i + 1; break; }
+  }
+  if (rowNum < 0) return;
+  await graphFetch(
+    `/me/drive/items/${S.fileId}/workbook/worksheets/Recorrentes/range(address='A${rowNum}:M${rowNum}')`,
+    { method: 'PATCH', body: { values: [[
+      id,
+      campos.descricao, campos.categoria, campos.subcategoria,
+      campos.conta, campos.tipo, campos.valor, campos.diaVencimento,
+      campos.variavel?'sim':'nao', campos.ativo?'sim':'nao',
+      campos.observacao, campos.ultimoValor, campos.ultimoPagamento
+    ]] } }
+  );
+  const idx = S.recorrentes.findIndex(r => String(r.id) === String(id));
+  if (idx >= 0) S.recorrentes[idx] = { ...S.recorrentes[idx], ...campos };
+  S._cache = {};
+}
+
+/* ============================================================
    SYNC GASTOSCARTAO
    ============================================================ */
 let _syncGCRunning = false;
