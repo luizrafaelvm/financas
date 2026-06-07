@@ -268,3 +268,125 @@ function exportarJSON() {
   a.href = url; a.download = `financas-rafael-${S.mesAtual}.json`;
   a.click(); URL.revokeObjectURL(url);
 }
+
+/* === RECORRENTES === */
+function toggleValorVariavel() {
+  const v = document.getElementById('rec-variavel')?.value==='sim';
+  document.getElementById('grupo-valor-fixo')
+    ?.classList.toggle('hidden', v);
+  document.getElementById('grupo-valor-variavel')
+    ?.classList.toggle('hidden', !v);
+}
+
+function abrirModalRecorrente() {
+  document.getElementById('rec-edit-id').value = '';
+  document.getElementById('rec-desc').value = '';
+  document.getElementById('rec-valor').value = '';
+  document.getElementById('rec-valor-med').value = '';
+  document.getElementById('rec-dia').value = '10';
+  document.getElementById('rec-variavel').value = 'nao';
+  document.getElementById('rec-obs').value = '';
+  document.getElementById('rec-cat').value = 'Moradia';
+  document.getElementById('rec-sub').value = '';
+  document.getElementById('rec-modal-titulo').textContent =
+    'Novo Recorrente';
+  document.getElementById('rec-btn-desativar').style.display='none';
+  toggleValorVariavel();
+  document.getElementById('modal-recorrente')
+    .classList.remove('hidden');
+}
+
+function editarRecorrente(id) {
+  const r = S.recorrentes.find(x=>String(x.id)===String(id));
+  if (!r) return;
+  document.getElementById('rec-edit-id').value = r.id;
+  document.getElementById('rec-desc').value = r.descricao;
+  document.getElementById('rec-variavel').value =
+    r.variavel?'sim':'nao';
+  document.getElementById('rec-valor').value = r.valor;
+  document.getElementById('rec-valor-med').value =
+    r.ultimoValor||r.valor;
+  document.getElementById('rec-dia').value = r.diaVencimento;
+  document.getElementById('rec-cat').value = r.categoria;
+  document.getElementById('rec-sub').value = r.subcategoria||'';
+  document.getElementById('rec-conta').value = r.conta;
+  document.getElementById('rec-obs').value = r.observacao||'';
+  document.getElementById('rec-modal-titulo').textContent =
+    'Editar Recorrente';
+  document.getElementById('rec-btn-desativar').style.display='';
+  toggleValorVariavel();
+  document.getElementById('modal-recorrente')
+    .classList.remove('hidden');
+}
+
+async function saveRecorrente() {
+  const variavel =
+    document.getElementById('rec-variavel').value==='sim';
+  const rec = {
+    descricao: document.getElementById('rec-desc').value.trim(),
+    variavel,
+    valor: parseFloat(document.getElementById(
+      variavel?'rec-valor-med':'rec-valor').value)||0,
+    diaVencimento:
+      parseInt(document.getElementById('rec-dia').value)||1,
+    categoria: document.getElementById('rec-cat').value,
+    subcategoria: document.getElementById('rec-sub').value,
+    conta: document.getElementById('rec-conta').value,
+    observacao: document.getElementById('rec-obs').value,
+    tipo: 'despesa', ativo: true
+  };
+  if (!rec.descricao) {
+    alert('Informe a descrição.'); return;
+  }
+  const editId = document.getElementById('rec-edit-id').value;
+  showLoading(true,'Salvando recorrente...');
+  try {
+    if (editId) {
+      await atualizarRecorrente(editId,
+        {...rec, ultimoValor:rec.valor, id:editId});
+    } else {
+      await salvarRecorrente(rec);
+    }
+    closeModal('recorrente');
+    renderRecorrentes();
+    showLoading(false);
+    showToast('✓ Recorrente salvo','verde');
+  } catch(e) {
+    showLoading(false);
+    alert('Erro: '+e.message);
+  }
+}
+
+async function desativarRecorrente() {
+  const id = document.getElementById('rec-edit-id').value;
+  if (!id||!confirm('Desativar este recorrente?')) return;
+  showLoading(true,'Desativando...');
+  try {
+    const r = S.recorrentes.find(x=>String(x.id)===String(id));
+    await atualizarRecorrente(id, {...r, ativo:false});
+    closeModal('recorrente');
+    renderRecorrentes();
+    showLoading(false);
+    showToast('Recorrente desativado','amarelo');
+  } catch(e) {
+    showLoading(false);
+    alert('Erro: '+e.message);
+  }
+}
+
+function cadastrarSugestao(s) {
+  document.getElementById('rec-desc').value = s.descricao;
+  document.getElementById('rec-variavel').value =
+    s.variavel?'sim':'nao';
+  document.getElementById('rec-valor').value = s.valor;
+  document.getElementById('rec-valor-med').value = s.valor;
+  document.getElementById('rec-cat').value = s.categoria||'Outros';
+  document.getElementById('rec-sub').value = s.subcategoria||'';
+  document.getElementById('rec-edit-id').value = '';
+  document.getElementById('rec-btn-desativar').style.display='none';
+  document.getElementById('rec-modal-titulo').textContent =
+    'Novo Recorrente';
+  toggleValorVariavel();
+  document.getElementById('modal-recorrente')
+    .classList.remove('hidden');
+}

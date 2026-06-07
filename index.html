@@ -68,6 +68,15 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
       <span class="nav-tooltip">Metas</span>
     </button>
+    <button class="nav-btn" data-section="recorrentes"
+      onclick="showSection('recorrentes',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.8">
+        <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/>
+        <path d="M12 8v4l2 2"/>
+      </svg>
+      <span class="nav-tooltip">Recorrentes</span>
+    </button>
     <div id="sidebar-spacer"></div>
     <button class="nav-btn" data-section="importar" onclick="showSection('importar',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -246,6 +255,39 @@
         <button class="btn btn-secondary btn-sm" onclick="openModal('meta')">+ Nova Meta</button>
       </div>
       <div class="metas-grid" id="metas-grid"></div>
+    </div>
+
+    <!-- ===== RECORRENTES ===== -->
+    <div class="section" id="sec-recorrentes">
+      <div style="display:flex;justify-content:space-between;
+        align-items:center;margin-bottom:16px">
+        <div class="section-title" style="margin:0">
+          🔄 Gastos Recorrentes</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm"
+            onclick="switchTabRec('sugestoes')">
+            🔍 Detectar automático</button>
+          <button class="btn btn-primary btn-sm"
+            onclick="abrirModalRecorrente()">+ Novo</button>
+        </div>
+      </div>
+
+      <div class="card card-p" style="margin-bottom:16px"
+        id="rec-resumo"></div>
+
+      <div style="display:flex;gap:0;margin-bottom:16px;
+        border-bottom:1px solid var(--border)">
+        <button id="tab-fixos" class="tab-btn active"
+          onclick="switchTabRec('fixos')">Fixos</button>
+        <button id="tab-variaveis" class="tab-btn"
+          onclick="switchTabRec('variaveis')">Variáveis</button>
+        <button id="tab-sugestoes" class="tab-btn"
+          onclick="switchTabRec('sugestoes')">Sugestões</button>
+      </div>
+
+      <div id="rec-fixos"></div>
+      <div id="rec-variaveis" class="hidden"></div>
+      <div id="rec-sugestoes" class="hidden"></div>
     </div>
 
     <!-- ===== IMPORTAR ===== -->
@@ -457,6 +499,14 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/></svg>
       Extrato
     </button>
+    <button class="bnav-btn" onclick="showSection('recorrentes',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.8">
+        <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/>
+        <path d="M12 8v4l2 2"/>
+      </svg>
+      Recorrentes
+    </button>
     <button class="bnav-btn" onclick="showSection('diagnostico',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Diagnóstico
@@ -567,6 +617,86 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('meta')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveMeta()">Salvar meta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Recorrente -->
+<div class="modal-overlay hidden" id="modal-recorrente">
+  <div class="modal-box">
+    <div class="modal-title" id="rec-modal-titulo">
+      Novo Recorrente</div>
+    <input type="hidden" id="rec-edit-id">
+    <div class="form-group">
+      <label class="form-label">Descrição *</label>
+      <input class="form-input" id="rec-desc"
+        placeholder="Ex: Condomínio, Netflix, Conta de Luz...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tipo de recorrência</label>
+      <select class="form-select" id="rec-variavel"
+        onchange="toggleValorVariavel()">
+        <option value="nao">Fixo (valor não muda)</option>
+        <option value="sim">Variável (valor muda todo mês)</option>
+      </select>
+    </div>
+    <div class="form-group" id="grupo-valor-fixo">
+      <label class="form-label">Valor mensal (R$) *</label>
+      <input class="form-input" id="rec-valor"
+        type="number" step="0.01" min="0" placeholder="0,00">
+    </div>
+    <div class="form-group hidden" id="grupo-valor-variavel">
+      <label class="form-label">Valor médio estimado (R$)</label>
+      <input class="form-input" id="rec-valor-med"
+        type="number" step="0.01" min="0" placeholder="0,00">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">
+        Para variáveis, informe uma estimativa. O sistema atualiza
+        com o valor real quando o lançamento for importado.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dia de vencimento</label>
+      <input class="form-input" id="rec-dia"
+        type="number" min="1" max="31" value="10">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Categoria</label>
+      <select class="form-select" id="rec-cat">
+        <option>Moradia</option><option>Filhas</option>
+        <option>Saúde</option><option>Alimentação</option>
+        <option>Transporte</option><option>Lazer</option>
+        <option>Assinaturas</option><option>Financiamentos</option>
+        <option>Outros</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subcategoria</label>
+      <input class="form-input" id="rec-sub"
+        placeholder="Ex: Internet, Seguro, Parcela...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Conta de débito</label>
+      <select class="form-select" id="rec-conta">
+        <option value="itau-corrente">Itaú Corrente</option>
+        <option value="bradesco">Bradesco</option>
+        <option value="itau-cartao">Itaú Cartão</option>
+        <option value="nubank">Nubank</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Observação</label>
+      <input class="form-input" id="rec-obs"
+        placeholder="Nota opcional...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger btn-sm"
+        id="rec-btn-desativar"
+        onclick="desativarRecorrente()"
+        style="margin-right:auto;display:none">
+        Desativar</button>
+      <button class="btn btn-secondary"
+        onclick="closeModal('recorrente')">Cancelar</button>
+      <button class="btn btn-primary"
+        onclick="saveRecorrente()">Salvar</button>
     </div>
   </div>
 </div>

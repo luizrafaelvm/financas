@@ -636,6 +636,144 @@ function renderMetas() {
 }
 
 /* ============================================================
+   RECORRENTES
+   ============================================================ */
+function renderRecorrentes() {
+  const fixos     = S.recorrentes.filter(r=>r.ativo&&!r.variavel);
+  const variaveis = S.recorrentes.filter(r=>r.ativo&&r.variavel);
+  const totalFixo = fixos.reduce((s,r)=>s+r.valor,0);
+  const totalVar  = variaveis.reduce(
+    (s,r)=>s+(r.ultimoValor||r.valor),0);
+
+  const resumoEl = document.getElementById('rec-resumo');
+  if (resumoEl) {
+    resumoEl.innerHTML = `
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div>
+          <div class="card-label">COMPROMISSO FIXO</div>
+          <div class="mono" style="font-size:22px;color:var(--red)">
+            ${fmtBRL(totalFixo)}/mês</div>
+          <div style="font-size:11px;color:var(--text3)">
+            ${fixos.length} itens fixos</div>
+        </div>
+        <div>
+          <div class="card-label">ESTIMATIVA VARIÁVEL</div>
+          <div class="mono" style="font-size:22px;color:var(--orange)">
+            ${fmtBRL(totalVar)}/mês</div>
+          <div style="font-size:11px;color:var(--text3)">
+            ${variaveis.length} itens variáveis</div>
+        </div>
+        <div>
+          <div class="card-label">TOTAL RECORRENTE</div>
+          <div class="mono" style="font-size:22px;color:var(--yellow)">
+            ${fmtBRL(totalFixo+totalVar)}/mês</div>
+          <div style="font-size:11px;color:var(--text3)">
+            antes de qualquer gasto variável</div>
+        </div>
+      </div>`;
+  }
+
+  renderTabRecorrentes('fixos', fixos);
+  renderTabRecorrentes('variaveis', variaveis);
+}
+
+function renderTabRecorrentes(tab, lista) {
+  const el = document.getElementById(`rec-${tab}`);
+  if (!el) return;
+  if (!lista.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">
+        ${tab==='fixos'?'📅':'📊'}</div>
+      <div class="empty-state-text">
+        Nenhum recorrente ${tab==='fixos'?'fixo':'variável'}
+        cadastrado</div>
+      <button class="btn btn-primary btn-sm"
+        style="margin-top:12px"
+        onclick="abrirModalRecorrente()">
+        + Cadastrar agora</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = `<div class="card" style="padding:0;overflow:hidden">` +
+    lista.map(r => `
+      <div style="display:flex;align-items:center;gap:12px;
+        padding:14px 16px;border-bottom:1px solid var(--border)">
+        <span style="width:10px;height:10px;border-radius:50%;
+          background:${CORES[r.categoria]||'#8E8E93'};
+          flex-shrink:0"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:500">
+            ${r.descricao}</div>
+          <div style="font-size:11px;color:var(--text3)">
+            ${r.categoria}
+            ${r.subcategoria?' · '+r.subcategoria:''}
+            · Vence dia ${r.diaVencimento}
+            · ${r.conta}
+            ${r.variavel?
+              ' · <span style="color:var(--orange)">variável</span>':''}
+          </div>
+        </div>
+        <div style="text-align:right;margin-right:8px">
+          <div class="mono" style="font-size:15px;color:var(--red)">
+            ${fmtBRL(r.variavel?r.ultimoValor||r.valor:r.valor)}</div>
+          ${r.variavel?
+            `<div style="font-size:10px;color:var(--text3)">
+              estimado</div>`:''}
+        </div>
+        <button class="btn btn-secondary btn-sm"
+          onclick="editarRecorrente('${r.id}')">Editar</button>
+      </div>`).join('') + `</div>`;
+}
+
+function switchTabRec(tab) {
+  ['fixos','variaveis','sugestoes'].forEach(t => {
+    document.getElementById(`rec-${t}`)
+      ?.classList.toggle('hidden', t!==tab);
+    document.getElementById(`tab-${t}`)
+      ?.classList.toggle('active', t===tab);
+  });
+  if (tab==='sugestoes') renderSugestoesRecorrentes();
+}
+
+function renderSugestoesRecorrentes() {
+  const sugestoes = detectarRecorrentes().filter(s=>!s.jaRegistrado);
+  const el = document.getElementById('rec-sugestoes');
+  if (!el) return;
+  if (!sugestoes.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">✅</div>
+      <div class="empty-state-text">
+        Todos os recorrentes detectados já estão cadastrados
+      </div></div>`;
+    return;
+  }
+  el.innerHTML =
+    `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+      ${sugestoes.length} gastos detectados como recorrentes
+      nos últimos 3 meses.</div>` +
+    `<div class="card" style="padding:0;overflow:hidden">` +
+    sugestoes.map(s=>`
+      <div style="display:flex;align-items:center;gap:12px;
+        padding:12px 16px;border-bottom:1px solid var(--border)">
+        <span style="width:10px;height:10px;border-radius:50%;
+          background:${CORES[s.categoria]||'#8E8E93'};
+          flex-shrink:0"></span>
+        <div style="flex:1">
+          <div style="font-size:13px">${s.descricao}</div>
+          <div style="font-size:11px;color:var(--text3)">
+            ${s.categoria} · ${s.ocorrencias}x em 3 meses
+            · ${s.variavel?'valor variável':'valor fixo'}</div>
+        </div>
+        <span class="mono" style="font-size:13px;color:var(--orange)">
+          ~${fmtBRL(s.valor)}</span>
+        <button class="btn btn-primary btn-sm"
+          onclick='cadastrarSugestao(${JSON.stringify(s)
+            .replace(/'/g,"&#39;")})'>
+          Cadastrar</button>
+      </div>`).join('') + `</div>`;
+}
+
+/* ============================================================
    MÊS SELECTOR
    ============================================================ */
 function initMesSelect() {
