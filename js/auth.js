@@ -100,7 +100,14 @@ async function loadAllData() {
 
     showLoading(true, 'Lendo transações...');
     const rawDados = await getSheetValues(SHEET_DADOS);
-    S.transactions = parseDados(rawDados);
+
+    S._rawDados = rawDados;
+    S._mesesDisponiveis = getMesesDoRaw(rawDados);
+
+    const mesesIniciais = getUltimosMeses(3);
+    S.transactions = parseDados(rawDados, mesesIniciais);
+    mesesIniciais.forEach(m => S._mesesCarregados.add(m));
+
     buildIndex();
     S._cache = {};
 

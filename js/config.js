@@ -117,7 +117,10 @@ const S = {
   _cache:              {},
   _lastRenderedMes:    null,
   _index:              {},
-  _secaoCache:         {}
+  _secaoCache:         {},
+  _rawDados:           null,
+  _mesesDisponiveis:   [],
+  _mesesCarregados:    new Set()
 };
 
 /* ============================================================

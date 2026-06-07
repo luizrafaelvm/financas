@@ -84,8 +84,40 @@ function categorizar(desc) {
   return { cat: 'Outros', sub: 'Não categorizado' };
 }
 
-function parseDados(raw) {
+function getMesAnoRaw(row) {
+  if (!row) return '';
+  const col5 = row[5];
+  const isGPS = typeof col5 === 'number' && Math.abs(col5) > 20;
+  const raw = isGPS ? row[13] : row[10];
+  return raw ? String(raw).trim() : '';
+}
+
+function getUltimosMeses(n) {
+  const result = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    result.push(
+      `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    );
+  }
+  return result;
+}
+
+function getMesesDoRaw(raw) {
+  const set = new Set();
+  set.add(getMesAtual());
+  if (!raw) return [...set].sort().reverse();
+  for (let i = 1; i < raw.length; i++) {
+    const m = getMesAnoRaw(raw[i]);
+    if (m && /^\d{4}-\d{2}$/.test(m)) set.add(m);
+  }
+  return [...set].sort().reverse();
+}
+
+function parseDados(raw, filtroMeses = null) {
   if (!raw || raw.length < 2) return [];
+  const filtroSet = filtroMeses ? new Set(filtroMeses) : null;
   const txs = [];
   let idCount = 1;
 
@@ -94,6 +126,12 @@ function parseDados(raw) {
 
     // Pular linhas completamente vazias
     if (!r || r.every(c => c === null || c === '' || c === undefined)) continue;
+
+    // Filtro rápido por mês ANTES de parsear tudo
+    if (filtroSet) {
+      const mesRaw = getMesAnoRaw(r);
+      if (!mesRaw || !filtroSet.has(mesRaw)) continue;
+    }
 
     let id, data, descricao, valor, tipo, cat, sub, conta, origem, obs, mesAno;
 
@@ -325,6 +363,19 @@ function txsMes(mesAno) {
   return S.transactions.filter(t => t.mesAno === mesAno);
 }
 
+async function loadMesHistorico(mesAno) {
+  if (S._mesesCarregados.has(mesAno)) return;
+  if (!S._rawDados) return;
+
+  const novas = parseDados(S._rawDados, [mesAno]);
+  novas.forEach(t => S.transactions.push(t));
+  S._mesesCarregados.add(mesAno);
+
+  buildIndex();
+  S._cache = {};
+  S._secaoCache = {};
+}
+
 function resumoMes(mesAno) {
   const cacheKey = `resumo_${mesAno}_${S.transactions.length}`;
   if (S._cache[cacheKey]) return S._cache[cacheKey];
@@ -354,6 +405,9 @@ function gastosPorCategoria(mesAno) {
 }
 
 function mesesToDisplay() {
+  if (S._mesesDisponiveis && S._mesesDisponiveis.length > 0) {
+    return S._mesesDisponiveis;
+  }
   const set = new Set(S.transactions.map(t=>t.mesAno).filter(Boolean));
   const atual = getMesAtual();
   if (!set.has(atual)) set.add(atual);

@@ -412,6 +412,13 @@ async function syncGastosCartao() {
       });
       buildIndex();
       S._cache = {};
+      novasLinhas.forEach(row => {
+        const m = row[10];
+        if (m) S._mesesCarregados.add(String(m));
+      });
+      if (S._rawDados) {
+        S._mesesDisponiveis = getMesesDoRaw(S._rawDados);
+      }
       renderAll();
       showToast(`✓ GastosCartao — ${novas.length} novas transações`, 'verde');
     } else {

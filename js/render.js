@@ -641,20 +641,30 @@ function renderMetas() {
 function initMesSelect() {
   const sel = document.getElementById('mes-select');
   if (!sel) return;
-  const meses = mesesToDisplay();
-  sel.innerHTML = meses.map(m =>
-    `<option value="${m}" ${m===S.mesAtual?'selected':''}>${mesAnoLabel(m)}</option>`
-  ).join('');
+  const meses = S._mesesDisponiveis.length > 0
+    ? S._mesesDisponiveis
+    : mesesToDisplay();
+  sel.innerHTML = meses.map(m => `
+    <option value="${m}" ${m===S.mesAtual?'selected':''}>
+      ${mesAnoLabel(m)}${S._mesesCarregados.has(m) ? '' : ' ⏳'}
+    </option>`).join('');
 }
 
-function onMesChange(mesAno) {
-  S._secaoCache = {};
+async function onMesChange(mesAno) {
+  S._secaoCache  = {};
   S._lastRenderedMes = null;
-  S.mesAtual = mesAno;
-  const active = document.querySelector('.section.active');
-  const secId  = active?.id?.replace('sec-','');
-  if (secId) renderSection(secId);
-  if (secId !== 'home') renderHome();
+  S.mesAtual     = mesAno;
+  S.paginaLancamentos = 1;
+
+  if (!S._index || !S._index[mesAno]) {
+    showLoading(true, `Carregando ${mesAnoLabel(mesAno)}...`);
+    await loadMesHistorico(mesAno);
+    showLoading(false);
+  }
+
+  const secAtiva = document.querySelector('.section.active');
+  const secId = secAtiva?.id?.replace('sec-','') || 'home';
+  renderSection(secId);
   updateHeaderBalance();
 }
 

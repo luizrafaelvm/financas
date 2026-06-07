@@ -620,6 +620,13 @@ async function confirmImport() {
     });
     buildIndex();
     S._cache = {};
+    if (S._rawDados) {
+      S._mesesDisponiveis = getMesesDoRaw(S._rawDados);
+    }
+    S.transactions.forEach(t => {
+      if (t.mesAno) S._mesesCarregados.add(t.mesAno);
+    });
+    initMesSelect();
     prog.classList.add('hidden');
     cancelImport();
     renderAll();
