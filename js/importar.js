@@ -656,3 +656,83 @@ function confirmarMapeamento() {
   }
   window.mapeamentoPendente = null;
 }
+
+/* ============================================================
+   PATRIMÔNIO — Import IR / Extratos de Investimentos
+   ============================================================ */
+async function salvarPatrimonio(itens) {
+  if (!itens || !itens.length) return;
+  const rows = itens.map(p => [
+    new Date().toLocaleDateString('pt-BR'),
+    p.tipo || 'Investimento',
+    p.descricao || '',
+    p.valor || 0,
+    p.fonte || '',
+    p.ano || new Date().getFullYear()
+  ]);
+  await appendRows('Patrimônio', rows);
+  rows.forEach(r => S.patrimonio.push({
+    data: new Date(), tipo: r[1], descricao: r[2],
+    valor: r[3], fonte: r[4], ano: r[5]
+  }));
+  showToast(`✓ ${rows.length} itens patrimoniais salvos`, 'verde');
+}
+
+async function processPatrimonioFile(file) {
+  const apiKey = localStorage.getItem('rfm_claude_key');
+  if (!apiKey) {
+    showToast('⚠️ Configure API Key em Configurações para importar IR', 'amarelo');
+    return;
+  }
+  showToast('⏳ Analisando documento com IA...', 'amarelo');
+  try {
+    const base64 = await fileToBase64(file);
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        system: 'Você extrai dados financeiros de documentos fiscais brasileiros. Responda APENAS com JSON válido, sem texto adicional.',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64',
+                media_type: 'application/pdf', data: base64 } },
+            { type: 'text', text: `Extraia os dados de patrimônio/investimentos deste documento.
+Pode ser um Imposto de Renda (seção Bens e Direitos) ou extrato de corretora (XP, BTG, Avenue, etc).
+Retorne JSON com este formato:
+{
+  "fonte": "nome da instituição ou IR AAAA",
+  "ano": 2024,
+  "itens": [
+    {
+      "tipo": "Imóvel/Ações/FII/Renda Fixa/Previdência/Conta/Outro",
+      "descricao": "descrição do bem ou ativo",
+      "valor": 0.00
+    }
+  ],
+  "total": 0.00
+}` }
+          ]
+        }]
+      })
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '';
+    const parsed = JSON.parse(text.replace(/```json?|```/g,'').trim());
+    const itens = (parsed.itens || []).map(i => ({
+      ...i, fonte: parsed.fonte, ano: parsed.ano
+    }));
+    await salvarPatrimonio(itens);
+    renderHome();
+  } catch(e) {
+    showToast('❌ Erro ao interpretar documento: ' + e.message, 'amarelo');
+  }
+}

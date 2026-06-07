@@ -57,26 +57,62 @@ function renderHome() {
     ${summaryCard('RENDA COMPROMETIDA','var(--orange)',comprometimento.toFixed(1)+'%',`de ${fmtBRL(renda)}`)}
   `;
 
-  // Wallet cards
-  const txsCartao = txsMes(mes).filter(t=>t.conta==='itau-cartao');
-  const txsNubank = txsMes(mes).filter(t=>t.conta==='nubank');
-  const totalCartao = txsCartao.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
-  const totalNubank = txsNubank.reduce((s,t)=>s+(t.tipo==='receita'?t.valor:-t.valor),0);
+  // Cartões de crédito
+  const secaoCartoes = document.getElementById('wallet-cards');
+  const txsCartaoItau = txsMes(mes).filter(t =>
+    t.conta === 'itau-cartao' || t.conta === 'itau-2812' || t.conta === 'itau-4141'
+  );
+  const txsCartaoDiners = txsMes(mes).filter(t =>
+    t.conta && (t.conta.toLowerCase().includes('diners') ||
+                t.conta.toLowerCase().includes('caixa'))
+  );
+  const totalItau   = txsCartaoItau.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
+  const totalDiners = txsCartaoDiners.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
 
-  document.getElementById('wallet-cards').innerHTML = `
-    <div class="wallet-card" style="background:linear-gradient(135deg,#E67E22,#D35400)" onclick="showSection('lancamentos',null)">
+  secaoCartoes.innerHTML = `
+    <div class="wallet-card" style="background:linear-gradient(135deg,#E67E22,#D35400)">
       <div class="wallet-card-bank">Itaú · Cartão de Crédito</div>
       <div class="wallet-card-num">•••• 2812 / 4141</div>
       <div class="wallet-card-label">FATURA DO MÊS</div>
-      <div class="wallet-card-balance">${fmtBRL(totalCartao)}</div>
+      <div class="wallet-card-balance">${fmtBRL(totalItau)}</div>
     </div>
-    <div class="wallet-card" style="background:linear-gradient(135deg,#6C3483,#8E44AD)">
-      <div class="wallet-card-bank">Nubank · Conta Digital</div>
-      <div class="wallet-card-num">Receitas & Entradas</div>
-      <div class="wallet-card-label">SALDO ESTIMADO</div>
-      <div class="wallet-card-balance">${fmtBRL(totalNubank)}</div>
-    </div>
+    ${totalDiners > 0 || txsCartaoDiners.length > 0 ? `
+    <div class="wallet-card" style="background:linear-gradient(135deg,#1A237E,#283593)">
+      <div class="wallet-card-bank">Caixa · Diners Club</div>
+      <div class="wallet-card-num">•••• Diners</div>
+      <div class="wallet-card-label">FATURA DO MÊS</div>
+      <div class="wallet-card-balance">${fmtBRL(totalDiners)}</div>
+    </div>` : ''}
   `;
+
+  // Contas bancárias
+  const txsItauCC = txsMes(mes).filter(t =>
+    t.conta === 'itau-corrente' || (t.conta && t.conta.includes('corrente'))
+  );
+  const txsBradesco = txsMes(mes).filter(t =>
+    t.conta && t.conta.toLowerCase().includes('bradesco')
+  );
+  const saldoItauCC   = txsItauCC.reduce((s,t)=>s+(t.tipo==='receita'?t.valor:-t.valor),0);
+  const saldoBradesco = txsBradesco.reduce((s,t)=>s+(t.tipo==='receita'?t.valor:-t.valor),0);
+
+  const contaCards = document.getElementById('conta-cards');
+  if (contaCards) {
+    contaCards.innerHTML = `
+      <div class="wallet-card" style="background:linear-gradient(135deg,#1565C0,#1976D2)">
+        <div class="wallet-card-bank">Itaú · Conta Corrente</div>
+        <div class="wallet-card-num">Conta Corrente</div>
+        <div class="wallet-card-label">SALDO ESTIMADO</div>
+        <div class="wallet-card-balance">${fmtBRL(saldoItauCC)}</div>
+      </div>
+      ${saldoBradesco !== 0 || txsBradesco.length > 0 ? `
+      <div class="wallet-card" style="background:linear-gradient(135deg,#B71C1C,#C62828)">
+        <div class="wallet-card-bank">Bradesco · Conta Corrente</div>
+        <div class="wallet-card-num">Conta Corrente</div>
+        <div class="wallet-card-label">SALDO ESTIMADO</div>
+        <div class="wallet-card-balance">${fmtBRL(saldoBradesco)}</div>
+      </div>` : ''}
+    `;
+  }
 
   // Destroy old charts before recreating
   destroyChart('donut'); destroyChart('area');
@@ -95,54 +131,101 @@ function renderHome() {
       }]
     },
     options: {
-      cutout: '68%', responsive: true, maintainAspectRatio: true,
+      cutout: '65%',
+      responsive: true,
+      maintainAspectRatio: true,
       plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${fmtBRL(ctx.raw)}` } }
+        legend: {
+          display: true,
+          position: 'right',
+          labels: {
+            color: '#AEAEB2',
+            font: { size: 11, family: "'DM Sans'" },
+            padding: 12,
+            boxWidth: 10,
+            boxHeight: 10,
+            usePointStyle: true,
+            pointStyleWidth: 10,
+            generateLabels: (chart) => {
+              const data = chart.data;
+              return data.labels.map((label, i) => ({
+                text: `${label}  ${fmtBRL(data.datasets[0].data[i])}`,
+                fillStyle: data.datasets[0].backgroundColor[i],
+                strokeStyle: 'transparent',
+                pointStyle: 'circle',
+                index: i
+              }));
+            }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.label}: ${fmtBRL(ctx.raw)}`
+          }
+        }
       }
     }
   });
 
-  // Area chart (timeline saldo)
-  const txs = txsMes(mes).filter(t=>t.tipo!=='transferência').sort((a,b)=>a.data-b.data);
-  const days = {}; let running = 0;
-  txs.forEach(t => {
-    const k = fmtData(t.data);
-    if (!days[k]) days[k] = 0;
-    days[k] += t.tipo==='receita' ? t.valor : -t.valor;
+  // Evolução do Patrimônio por ano
+  destroyChart('area');
+  const patrimonioAno = {};
+  (S.patrimonio || []).forEach(p => {
+    if (!patrimonioAno[p.ano]) patrimonioAno[p.ano] = 0;
+    patrimonioAno[p.ano] += p.valor;
   });
-  const labels = Object.keys(days);
-  const cumulativo = []; running = 0;
-  labels.forEach(k => { running += days[k]; cumulativo.push(running); });
-  const lastVal = cumulativo[cumulativo.length-1] || 0;
-  const lineColor = lastVal >= 0 ? '#30D158' : '#FF453A';
+  const anosLabels = Object.keys(patrimonioAno).sort();
+  const anosValues = anosLabels.map(a => patrimonioAno[a]);
 
   const ctx2 = document.getElementById('chart-area').getContext('2d');
-  const grad = ctx2.createLinearGradient(0,0,0,200);
-  grad.addColorStop(0, lastVal>=0 ? 'rgba(48,209,88,.3)' : 'rgba(255,69,58,.3)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  S.charts.area = new Chart(ctx2, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: cumulativo, borderColor: lineColor,
-        backgroundColor: grad, borderWidth: 2,
-        pointRadius: 0, fill: true, tension: 0.35
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      plugins: { legend:{display:false}, tooltip:{
-        callbacks:{ label: ctx=>`Saldo: ${fmtBRL(ctx.raw)}` }
-      }},
-      scales: {
-        x: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#636366',font:{size:10}} },
-        y: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#636366',font:{size:10},
-          callback: v => 'R$'+v.toLocaleString('pt-BR') }}
+  const hasPatrimonio = anosLabels.length > 0;
+
+  if (hasPatrimonio) {
+    const grad2 = ctx2.createLinearGradient(0,0,0,200);
+    grad2.addColorStop(0,'rgba(10,132,255,.3)');
+    grad2.addColorStop(1,'rgba(0,0,0,0)');
+    S.charts.area = new Chart(ctx2, {
+      type: 'line',
+      data: {
+        labels: anosLabels,
+        datasets: [{
+          label: 'Patrimônio Total',
+          data: anosValues,
+          borderColor: 'var(--blue)',
+          backgroundColor: grad2,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'var(--blue)',
+          fill: true, tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: ctx => `Patrimônio: ${fmtBRL(ctx.raw)}`
+          }}
+        },
+        scales: {
+          x: { grid:{color:'rgba(255,255,255,.04)'},
+               ticks:{color:'#636366',font:{size:10}} },
+          y: { grid:{color:'rgba(255,255,255,.04)'},
+               ticks:{color:'#636366',font:{size:10},
+               callback: v => 'R$'+v.toLocaleString('pt-BR')}}
+        }
       }
+    });
+  } else {
+    ctx2.clearRect(0,0,ctx2.canvas.width,ctx2.canvas.height);
+    const areaCard = ctx2.canvas.closest('.chart-card');
+    if (areaCard && !areaCard.querySelector('.chart-empty')) {
+      areaCard.insertAdjacentHTML('beforeend',
+        '<div class="chart-empty" style="text-align:center;padding:24px 16px;color:var(--text3);font-size:13px">' +
+        '📊 Importe dados do Imposto de Renda ou<br>extratos de investimentos para ver a evolução do patrimônio.' +
+        '</div>');
     }
-  });
+  }
 
   // Alertas
   renderAlertas(mes);

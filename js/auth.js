@@ -91,6 +91,7 @@ async function loadAllData() {
     showLoading(true, 'Criando estrutura...');
     await ensureSheet(SHEET_METAS, ['Categoria','Teto Mensal','Alerta em %']);
     await ensureSheet(SHEET_CFG, ['Chave','Valor']);
+    await ensureSheet('Patrimônio', ['Data','Tipo','Descrição','Valor','Fonte','Ano']);
 
     showLoading(true, 'Lendo transações...');
     const rawDados = await getSheetValues(SHEET_DADOS);
@@ -102,6 +103,9 @@ async function loadAllData() {
 
     const rawCfg = await getSheetValues(SHEET_CFG);
     S.config = parseCfg(rawCfg);
+
+    const rawPatrimonio = await getSheetValues('Patrimônio');
+    S.patrimonio = parsePatrimonio(rawPatrimonio || []);
 
     showLoading(false);
     renderAll();
