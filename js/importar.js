@@ -418,12 +418,22 @@ function parseXLSXExterno(rows, fileName, idxForced) {
   atualizarImportStats(lidas, duplas, S.importBuffer.length);
 }
 
-function isDuplicata(t) {
-  const tStr = t.data instanceof Date ? t.data.toISOString().slice(0,10) : '';
-  return S.transactions.some(tx => {
-    const txStr = tx.data instanceof Date ? tx.data.toISOString().slice(0,10) : '';
-    return txStr === tStr && tx.descricao === t.descricao &&
-           tx.valor === t.valor && tx.conta === t.conta;
+function isDuplicata(nova) {
+  return S.transactions.some(t => {
+    const descMatch = String(t.descricao||'').toUpperCase().trim() ===
+                      String(nova.descricao||'').toUpperCase().trim();
+    const valorMatch = Math.abs(parseFloat(t.valor)||0).toFixed(2) ===
+                       Math.abs(parseFloat(nova.valor)||0).toFixed(2);
+    if (!descMatch || !valorMatch) return false;
+
+    try {
+      const d1 = new Date(t.data);
+      const d2 = new Date(nova.data);
+      if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return descMatch && valorMatch;
+      return d1.toDateString() === d2.toDateString();
+    } catch {
+      return descMatch && valorMatch;
+    }
   });
 }
 
@@ -448,6 +458,7 @@ function parseOFX(content) {
     if (!dateStr || isNaN(amount)) return;
     const y=dateStr.substring(0,4), mo=dateStr.substring(4,6), d2=dateStr.substring(6,8);
     const date = new Date(`${y}-${mo}-${d2}T00:00:00`);
+    if (isNaN(date.getTime())) return;
     const mesAno = `${y}-${mo}`;
     const { cat, sub } = categorizar(memo);
     const tipo = amount < 0 ? 'despesa' : 'receita';

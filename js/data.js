@@ -19,12 +19,19 @@ function parseValorBR(str) {
 function reconstructDate(colA, mesAno) {
   try {
     if (!colA || !mesAno) return new Date();
-    const parts = String(colA).split('/');
-    const day   = parts[0]?.padStart(2,'0');
-    const [year, month] = String(mesAno).split('-');
+    const partsA = String(colA).split('/');
+    if (partsA.length < 2) return new Date();
+    const day   = partsA[0].padStart(2,'0');
+    const partsMes = String(mesAno).split('-');
+    if (partsMes.length < 2) return new Date();
+    const year  = partsMes[0];
+    const month = partsMes[1].padStart(2,'0');
     if (!day || !year || !month) return new Date();
-    return new Date(`${year}-${month}-${day}T00:00:00`);
-  } catch { return new Date(); }
+    const d = new Date(`${year}-${month}-${day}T00:00:00`);
+    return isNaN(d.getTime()) ? new Date() : d;
+  } catch {
+    return new Date();
+  }
 }
 
 function mapCartao(num) {

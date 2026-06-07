@@ -197,11 +197,12 @@ async function syncGastosCartao() {
         const mesAno = `${anoBase}-${String(mes).padStart(2,'0')}`;
 
         // Deduplicação
-        const data = reconstructDate(r[0], mesAno);
-        const dataStr = data.toISOString().slice(0,10);
+        const dataObj = reconstructDate(r[0], mesAno);
+        const data = (dataObj && !isNaN(dataObj.getTime())) ? dataObj : new Date();
+        const dataStr = (isNaN(new Date(data).getTime()) ? '' : new Date(data).toISOString()).slice(0,10);
         const conta = mapCartao(r[4]);
         const existe = S.transactions.some(tx =>
-          (tx.data instanceof Date ? tx.data.toISOString().slice(0,10) : '') === dataStr &&
+          (tx.data instanceof Date && !isNaN(tx.data.getTime()) ? tx.data.toISOString().slice(0,10) : '') === dataStr &&
           tx.descricao === descricao &&
           tx.valor === valor &&
           tx.conta === conta
