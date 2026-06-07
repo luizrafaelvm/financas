@@ -124,37 +124,51 @@ async function ensureSheet(name, headers) {
   );
 }
 
-/* ---- Escrever linha ao final ---- */
+/* ---- Escrever linha ao final (wrapper) ---- */
 async function appendRow(sheetName, values) {
-  // Garantir sessão válida antes de escrever
-  if (!S.workbookSessionId) {
-    await createWorkbookSession();
-  }
-  try {
-    const rangeData = await graphFetch(
-      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
-    );
-    const nextRow = (rangeData?.rowCount || 1) + 1;
-    const colEnd  = String.fromCharCode(64 + values.length);
-    await graphFetch(
-      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${nextRow}:${colEnd}${nextRow}')`,
-      { method: 'PATCH', body: { values: [values] } }
-    );
-  } catch(e) {
-    // Se sessão expirou, tentar sem sessão
-    if (e.message.includes('InvalidSession') || e.message.includes('invalidSession')) {
-      S.workbookSessionId = null;
-      const rangeData = await graphFetch(
-        `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
-      );
-      const nextRow = (rangeData?.rowCount || 1) + 1;
-      const colEnd  = String.fromCharCode(64 + values.length);
-      await graphFetch(
-        `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${nextRow}:${colEnd}${nextRow}')`,
-        { method: 'PATCH', body: { values: [values] } }
-      );
-    } else {
-      throw e;
+  await appendRows(sheetName, [values]);
+}
+
+/* ---- Escrever múltiplas linhas de uma vez (1 chamada API) ---- */
+async function appendRows(sheetName, rowsArray) {
+  if (!rowsArray || rowsArray.length === 0) return;
+
+  // Garantir sessão válida
+  if (!S.workbookSessionId) await createWorkbookSession();
+
+  // Descobrir última linha usada
+  const rangeData = await graphFetch(
+    `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`
+  );
+  const firstRow = (rangeData?.rowCount || 1) + 1;
+  const lastRow  = firstRow + rowsArray.length - 1;
+  const colCount = rowsArray[0].length;
+  const colEnd   = String.fromCharCode(64 + colCount);
+
+  // Escrever todas as linhas de uma vez
+  await graphFetch(
+    `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A${firstRow}:${colEnd}${lastRow}')`,
+    { method: 'PATCH', body: { values: rowsArray } }
+  );
+}
+
+/* ---- graphFetch com retry automático para 503/429 ---- */
+async function graphFetchWithRetry(endpoint, opts = {}, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await graphFetch(endpoint, opts);
+    } catch(e) {
+      const is503 = e.message.includes('503');
+      const is429 = e.message.includes('429');
+      if ((is503 || is429) && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.warn(`Graph ${is503?503:429} — retry ${attempt+1}/${maxRetries} em ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        S.workbookSessionId = null;
+        await createWorkbookSession();
+      } else {
+        throw e;
+      }
     }
   }
 }
@@ -295,31 +309,44 @@ async function syncGastosCartao() {
       }
     }
 
-    // 4) Gravar novas linhas na aba Dados em lotes de 50
+    // 4) Gravar novas linhas na aba Dados em lotes de 200
     if (novas.length > 0) {
-      for (let i = 0; i < novas.length; i += 50) {
-        await new Promise(r => setTimeout(r, 0));
-        for (const tx of novas.slice(i, i + 50)) {
-          const row = [
-            tx.colA, tx.colB, tx.colC, tx.colD, tx.colE,
-            tx.colF, tx.colG, tx.colH,
-            tx.tipo, tx.cat, tx.sub, tx.conta,
-            'cartao-automatico', tx.mesAno, '', ''
-          ];
-          await appendRow(SHEET_DADOS, row);
-          S.transactions.push({
-            id: S.transactions.length + 1,
-            rowIndex: S.transactions.length + 2,
-            data: tx.data, hora: tx.colB,
-            descricao: tx.colC, valor: tx.valor,
-            valorSigned: tx.tipo === 'despesa' ? -tx.valor : tx.valor,
-            tipo: tx.tipo, categoria: tx.cat, subcategoria: tx.sub,
-            conta: tx.conta, origem: 'cartao-automatico',
-            observacao: tx.colH, mesAno: tx.mesAno,
-            idNF: '', categorizadoNoExcel: false
-          });
+      // Montar linhas antes de gravar
+      const novasLinhas = novas.map(tx => [
+        tx.colA, tx.colB, tx.colC, tx.colD, tx.colE,
+        tx.colF, tx.colG, tx.colH,
+        tx.tipo, tx.cat, tx.sub, tx.conta,
+        'cartao-automatico', tx.mesAno, '', ''
+      ]);
+
+      const LOTE_SYNC = 200;
+      for (let i = 0; i < novasLinhas.length; i += LOTE_SYNC) {
+        const lote = novasLinhas.slice(i, i + LOTE_SYNC);
+        await appendRows(SHEET_DADOS, lote);
+        if (i + LOTE_SYNC < novasLinhas.length) {
+          await new Promise(r => setTimeout(r, 300));
+        }
+        // Renovar sessão a cada 5 lotes
+        if ((Math.floor(i / LOTE_SYNC) + 1) % 5 === 0) {
+          S.workbookSessionId = null;
+          await createWorkbookSession();
         }
       }
+
+      // Atualizar estado local
+      novas.forEach(tx => {
+        S.transactions.push({
+          id: S.transactions.length + 1,
+          rowIndex: S.transactions.length + 2,
+          data: tx.data, hora: tx.colB,
+          descricao: tx.colC, valor: tx.valor,
+          valorSigned: tx.tipo === 'despesa' ? -tx.valor : tx.valor,
+          tipo: tx.tipo, categoria: tx.cat, subcategoria: tx.sub,
+          conta: tx.conta, origem: 'cartao-automatico',
+          observacao: tx.colH, mesAno: tx.mesAno,
+          idNF: '', categorizadoNoExcel: false
+        });
+      });
       renderAll();
       showToast(`✓ GastosCartao — ${novas.length} novas transações`, 'verde');
     } else {

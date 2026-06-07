@@ -571,39 +571,54 @@ async function confirmImport() {
   bar.style.width = '0%';
 
   try {
-    let done = 0;
-    let loteCount = 0;
-    for (let i = 0; i < total; i += 50) {
-      const batch = S.importBuffer.slice(i, i + 50);
-      for (const t of batch) {
-        const d = t.data;
-        const row = [
-          `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
-          '00h00', t.descricao, t.valor.toFixed(2).replace('.',','), '', '', '', '',
-          t.tipo, t.cat, t.sub, t.conta, t.origem||'ofx-import', t.mesAno, '', Date.now()
-        ];
-        await appendRow(SHEET_DADOS, row);
-        S.transactions.push({
-          id: Date.now(), rowIndex: -1,
-          data: d, hora: '', descricao: t.descricao,
-          valor: t.valor, valorSigned: t.tipo==='despesa'?-t.valor:t.valor,
-          tipo: t.tipo, categoria: t.cat, subcategoria: t.sub,
-          conta: t.conta, origem: t.origem||'ofx-import', observacao: '',
-          mesAno: t.mesAno, idNF: '', categorizadoNoExcel: true
-        });
-        done++;
-      }
-      const pct = Math.round((done / total) * 100);
-      bar.style.width = pct + '%';
-      txt.textContent = `Gravando ${done} / ${total}...`;
-      await new Promise(r => setTimeout(r, 0));
-      loteCount++;
-      // Renovar sessão a cada 10 lotes para evitar expiração
-      if (loteCount % 10 === 0) {
+    // Montar todas as linhas primeiro (layout A-P do Excel)
+    const todasLinhas = S.importBuffer.map(t => {
+      const d = t.data instanceof Date ? t.data : new Date(t.data);
+      return [
+        `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
+        '00h00', t.descricao, t.valor.toFixed(2).replace('.',','), '', '', '', '',
+        t.tipo, t.cat, t.sub, t.conta, t.origem||'ofx-import', t.mesAno, '', Date.now()
+      ];
+    });
+
+    // Gravar em lotes de 200 linhas (1 chamada API por lote)
+    const LOTE = 200;
+    const totalLotes = Math.ceil(todasLinhas.length / LOTE);
+
+    for (let i = 0; i < todasLinhas.length; i += LOTE) {
+      const lote = todasLinhas.slice(i, i + LOTE);
+      const loteNum = Math.floor(i / LOTE) + 1;
+      const gravadas = Math.min(i + LOTE, todasLinhas.length);
+      bar.style.width = `${(gravadas / todasLinhas.length) * 100}%`;
+      txt.textContent = `Gravando ${gravadas} / ${todasLinhas.length} transações... (lote ${loteNum}/${totalLotes})`;
+
+      // Renovar sessão a cada 5 lotes
+      if (loteNum % 5 === 0) {
         S.workbookSessionId = null;
         await createWorkbookSession();
       }
+
+      await appendRows(SHEET_DADOS, lote);
+
+      if (i + LOTE < todasLinhas.length) {
+        await new Promise(r => setTimeout(r, 300));
+      }
     }
+
+    // Atualizar estado local em memória
+    todasLinhas.forEach((row, idx) => {
+      const t = S.importBuffer[idx];
+      S.transactions.push({
+        id: row[15], rowIndex: -1,
+        data: t.data instanceof Date ? t.data : new Date(t.data),
+        hora: '', descricao: t.descricao,
+        valor: t.valor, valorSigned: t.tipo==='despesa'?-t.valor:t.valor,
+        tipo: t.tipo, categoria: t.cat, subcategoria: t.sub,
+        conta: t.conta, origem: t.origem||'ofx-import', observacao: '',
+        mesAno: t.mesAno, idNF: '', categorizadoNoExcel: true
+      });
+    });
+
     prog.classList.add('hidden');
     cancelImport();
     renderAll();
