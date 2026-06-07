@@ -80,6 +80,7 @@ async function saveLancamento() {
       conta, origem: 'manual', observacao: obs,
       mesAno, idNF: '', categorizadoNoExcel: true
     });
+    buildIndex();
     S._cache = {};
     closeModal('lancamento');
     renderAll();

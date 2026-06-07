@@ -101,6 +101,7 @@ async function loadAllData() {
     showLoading(true, 'Lendo transações...');
     const rawDados = await getSheetValues(SHEET_DADOS);
     S.transactions = parseDados(rawDados);
+    buildIndex();
     S._cache = {};
 
     showLoading(true, 'Lendo metas...');

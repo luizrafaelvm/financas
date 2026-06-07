@@ -304,7 +304,24 @@ function detectarRecorrentes() {
     .sort((a,b) => b.valor - a.valor);
 }
 
+function buildIndex() {
+  S._index = {};
+  S.transactions.forEach(t => {
+    if (!t.mesAno) return;
+    if (!S._index[t.mesAno]) S._index[t.mesAno] = [];
+    S._index[t.mesAno].push(t);
+  });
+  Object.keys(S._index).forEach(mes => {
+    S._index[mes].sort((a,b) => {
+      const da = a.data instanceof Date ? a.data : new Date(a.data||0);
+      const db = b.data instanceof Date ? b.data : new Date(b.data||0);
+      return db - da;
+    });
+  });
+}
+
 function txsMes(mesAno) {
+  if (S._index && S._index[mesAno]) return S._index[mesAno];
   return S.transactions.filter(t => t.mesAno === mesAno);
 }
 

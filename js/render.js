@@ -8,24 +8,66 @@
    NAVEGAÇÃO
    ============================================================ */
 function showSection(id, btn) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-btn, .bnav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(`sec-${id}`)?.classList.add('active');
+  document.querySelectorAll('.section').forEach(s =>
+    s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn,.bnav-btn').forEach(b =>
+    b.classList.remove('active'));
+
+  const sec = document.getElementById(`sec-${id}`);
+  if (sec) sec.classList.add('active');
+
+  document.querySelectorAll(`[data-section="${id}"]`)
+    .forEach(b => b.classList.add('active'));
   if (btn) btn.classList.add('active');
-  // Sync sidebar & bottom nav
-  document.querySelectorAll(`[data-section="${id}"]`).forEach(b=>b.classList.add('active'));
-  renderSection(id);
+
+  if (sec && id !== 'home') {
+    const body = sec.querySelector('tbody');
+    if (body) body.innerHTML = `<tr><td colspan="6"
+      style="text-align:center;padding:24px;color:var(--text3)">
+      Carregando...</td></tr>`;
+  }
+
+  requestAnimationFrame(() => {
+    setTimeout(() => renderSection(id), 0);
+  });
 }
 
 function renderSection(id) {
+  const cacheKey = `${id}_${S.mesAtual}_${S.transactions.length}`;
+  const cacheaveis = ['analise','diagnostico','metas'];
+
+  if (cacheaveis.includes(id) && S._secaoCache[cacheKey]) {
+    const sec = document.getElementById(`sec-${id}`);
+    if (sec) sec.innerHTML = S._secaoCache[cacheKey];
+    return;
+  }
+
   switch(id) {
-    case 'home':         renderHome();         break;
-    case 'lancamentos':  renderLancamentos();   break;
-    case 'analise':      renderAnalise();       break;
-    case 'diagnostico':  renderDiagnostico();   break;
-    case 'metas':        renderMetas();         break;
-    case 'assistente':   /* chat keeps state */ break;
-    case 'importar':     /* drop zone static */ break;
+    case 'home':         renderHome();           break;
+    case 'lancamentos':  renderLancamentos();     break;
+    case 'analise':      renderAnalise();         break;
+    case 'diagnostico':  renderDiagnostico();     break;
+    case 'metas':        renderMetas();           break;
+    case 'recorrentes':  renderRecorrentes?.();   break;
+    case 'importar':                              break;
+    case 'assistente': {
+      const relSel = document.getElementById('rel-mes-select');
+      if (relSel && !relSel.options.length) {
+        mesesToDisplay().forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m; opt.textContent = mesAnoLabel(m);
+          if (m === S.mesAtual) opt.selected = true;
+          relSel.appendChild(opt);
+        });
+      }
+      break;
+    }
+    case 'configuracoes': initConfiguracoes?.(); break;
+  }
+
+  if (cacheaveis.includes(id)) {
+    const sec = document.getElementById(`sec-${id}`);
+    if (sec) S._secaoCache[cacheKey] = sec.innerHTML;
   }
 }
 
@@ -352,11 +394,6 @@ function renderLancamentos() {
   if (tipo)  txs = txs.filter(t => t.tipo === tipo);
   if (cat)   txs = txs.filter(t => t.categoria === cat);
   if (conta) txs = txs.filter(t => t.conta === conta);
-  txs = txs.sort((a,b) => {
-    const da = a.data instanceof Date ? a.data : new Date(a.data||0);
-    const db = b.data instanceof Date ? b.data : new Date(b.data||0);
-    return db - da;
-  });
 
   const total   = txs.length;
   const perPage = S.itensPorPagina || 50;
@@ -611,8 +648,9 @@ function initMesSelect() {
 }
 
 function onMesChange(mesAno) {
-  S.mesAtual = mesAno;
+  S._secaoCache = {};
   S._lastRenderedMes = null;
+  S.mesAtual = mesAno;
   const active = document.querySelector('.section.active');
   const secId  = active?.id?.replace('sec-','');
   if (secId) renderSection(secId);

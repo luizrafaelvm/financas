@@ -115,7 +115,9 @@ const S = {
   paginaLancamentos:   1,
   itensPorPagina:      50,
   _cache:              {},
-  _lastRenderedMes:    null
+  _lastRenderedMes:    null,
+  _index:              {},
+  _secaoCache:         {}
 };
 
 /* ============================================================

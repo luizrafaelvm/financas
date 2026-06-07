@@ -410,6 +410,8 @@ async function syncGastosCartao() {
           idNF: '', categorizadoNoExcel: false
         });
       });
+      buildIndex();
+      S._cache = {};
       renderAll();
       showToast(`✓ GastosCartao — ${novas.length} novas transações`, 'verde');
     } else {

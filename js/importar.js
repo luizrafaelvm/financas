@@ -618,6 +618,7 @@ async function confirmImport() {
         mesAno: t.mesAno, idNF: '', categorizadoNoExcel: true
       });
     });
+    buildIndex();
     S._cache = {};
     prog.classList.add('hidden');
     cancelImport();
