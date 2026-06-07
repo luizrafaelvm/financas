@@ -42,205 +42,251 @@ function renderAll() {
    HOME
    ============================================================ */
 function renderHome() {
-  const mesaMudou = S._lastRenderedMes !== S.mesAtual;
-  if (!mesaMudou && S.charts.donut && S.charts.area) {
-    updateHeaderBalance();
-    return;
-  }
-  S._lastRenderedMes = S.mesAtual;
-  destroyChart('donut');
-  destroyChart('area');
-
   const mes = S.mesAtual;
-  const { receitas, despesas, saldo, renda, comprometimento, maiorGasto } = resumoMes(mes);
+  const { receitas, despesas, saldo, renda, comprometimento, maiorGasto }
+    = resumoMes(mes);
 
-  // Saldo central
-  const saldoEl = document.getElementById('saldo-value');
-  saldoEl.textContent = fmtBRL(saldo);
-  saldoEl.style.color = saldo >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('saldo-sub').textContent = `${mesAnoLabel(mes)} · ${comprometimento.toFixed(0)}% da renda comprometido`;
+  // Só recriar chart se mês mudou
+  if (S._lastRenderedMes !== mes) {
+    destroyChart('donut');
+    destroyChart('area');
+    S._lastRenderedMes = mes;
+  }
 
-  // Summary grid
-  const grid = document.getElementById('summary-grid');
-  grid.innerHTML = `
+  // ---- PAINEL DE CHOQUE ----
+  const choqueEl        = document.getElementById('choque-valor');
+  const choqueSub       = document.getElementById('choque-sub');
+  const choqueMes       = document.getElementById('choque-mes');
+  const choqueBarra     = document.getElementById('choque-barra');
+  const choqueBarraLabel= document.getElementById('choque-barra-label');
+  const choqueBadges    = document.getElementById('choque-badges');
+
+  if (choqueEl) {
+    choqueEl.textContent = fmtBRL(despesas);
+    choqueEl.style.color = despesas > renda ? 'var(--red)' : 'var(--yellow)';
+  }
+  if (choqueMes) choqueMes.textContent = mesAnoLabel(mes).toUpperCase();
+  if (choqueSub) {
+    const sobra = receitas - despesas;
+    choqueSub.textContent = sobra >= 0
+      ? `Sobram ${fmtBRL(sobra)} de ${fmtBRL(renda)} estimados`
+      : `⚠️ Você gastou ${fmtBRL(Math.abs(sobra))} a mais do que recebeu`;
+    choqueSub.style.color = sobra >= 0 ? 'var(--text2)' : 'var(--red)';
+  }
+  if (choqueBarra) {
+    const pct = Math.min(comprometimento, 100);
+    choqueBarra.style.width = pct + '%';
+    choqueBarra.style.background = pct >= 90 ? 'var(--red)'
+      : pct >= 70 ? 'var(--yellow)' : 'var(--green)';
+  }
+  if (choqueBarraLabel) {
+    choqueBarraLabel.textContent =
+      `${comprometimento.toFixed(1)}% da renda estimada comprometida`;
+  }
+  if (choqueBadges) {
+    const txs  = txsMes(mes);
+    const nTxs = txs.filter(t=>t.tipo==='despesa').length;
+    const nCats= new Set(txs.filter(t=>t.tipo==='despesa').map(t=>t.categoria)).size;
+    choqueBadges.innerHTML = `
+      <span class="badge ${comprometimento>=90?'badge-red':
+        comprometimento>=70?'badge-yellow':'badge-green'}">
+        ${comprometimento.toFixed(0)}% da renda</span>
+      <span class="badge badge-gray">${nTxs} transações</span>
+      <span class="badge badge-gray">${nCats} categorias</span>`;
+  }
+
+  // ---- SUMMARY GRID ----
+  const totalRecorrentes = S.recorrentes
+    .filter(r => r.ativo)
+    .reduce((s,r) => s + (r.variavel ? r.ultimoValor || r.valor : r.valor), 0);
+
+  document.getElementById('summary-grid').innerHTML = `
     ${summaryCard('RECEITAS','var(--green)',fmtBRL(receitas),'do mês')}
     ${summaryCard('DESPESAS','var(--red)',fmtBRL(despesas),'do mês')}
-    ${summaryCard('MAIOR GASTO','var(--yellow)',maiorGasto ? fmtBRL(maiorGasto.valor) : '—', maiorGasto ? maiorGasto.descricao.substring(0,20) : 'nenhum')}
-    ${summaryCard('RENDA COMPROMETIDA','var(--orange)',comprometimento.toFixed(1)+'%',`de ${fmtBRL(renda)}`)}
-  `;
+    ${summaryCard('RECORRENTES','var(--orange)',fmtBRL(totalRecorrentes),'compromisso fixo')}
+    ${summaryCard('MAIOR GASTO','var(--yellow)',
+      maiorGasto ? fmtBRL(maiorGasto.valor) : '—',
+      maiorGasto ? maiorGasto.descricao.substring(0,22) : 'nenhum')}`;
 
-  // Cartões de crédito
-  const secaoCartoes = document.getElementById('wallet-cards');
-  const txsCartaoItau = txsMes(mes).filter(t =>
-    t.conta === 'itau-cartao' || t.conta === 'itau-2812' || t.conta === 'itau-4141'
-  );
-  const txsCartaoDiners = txsMes(mes).filter(t =>
-    t.conta && (t.conta.toLowerCase().includes('diners') ||
-                t.conta.toLowerCase().includes('caixa'))
-  );
-  const totalItau   = txsCartaoItau.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
-  const totalDiners = txsCartaoDiners.filter(t=>t.tipo==='despesa').reduce((s,t)=>s+t.valor,0);
+  // ---- TOP 5 GASTOS ----
+  const top5   = txsMes(mes).filter(t=>t.tipo==='despesa')
+    .sort((a,b)=>b.valor-a.valor).slice(0,5);
+  const top5El = document.getElementById('home-top5');
+  if (top5El) {
+    top5El.innerHTML = top5.length === 0
+      ? '<div style="color:var(--text3);font-size:13px">Sem gastos registrados</div>'
+      : top5.map((t,i) => `
+        <div style="display:flex;align-items:center;gap:12px;
+          padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="width:24px;height:24px;border-radius:50%;
+            background:var(--bg3);display:flex;align-items:center;
+            justify-content:center;font-size:11px;font-weight:600;
+            flex-shrink:0">${i+1}</div>
+          <span style="width:10px;height:10px;border-radius:50%;
+            background:${CORES[t.categoria]||'#8E8E93'};flex-shrink:0"></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;white-space:nowrap;overflow:hidden;
+              text-overflow:ellipsis">${t.descricao}</div>
+            <div style="font-size:11px;color:var(--text3)">
+              ${t.categoria} · ${fmtData(t.data)}</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;color:var(--red);
+            font-size:14px;white-space:nowrap;font-weight:500">
+            ${fmtBRL(t.valor)}</div>
+        </div>`).join('');
+  }
 
-  secaoCartoes.innerHTML = `
-    <div class="wallet-card" style="background:linear-gradient(135deg,#E67E22,#D35400)">
+  // ---- COMPROMETIMENTO RECORRENTES ----
+  const recEl = document.getElementById('home-recorrentes');
+  if (recEl) {
+    const recAtivos = S.recorrentes.filter(r=>r.ativo);
+    if (!recAtivos.length) {
+      recEl.innerHTML = `<div style="color:var(--text3);font-size:13px">
+        Nenhum recorrente cadastrado.
+        <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+          onclick="showSection('recorrentes',null)">
+          Cadastrar →</button></div>`;
+    } else {
+      const totalRec = recAtivos.reduce((s,r)=>
+        s+(r.variavel?r.ultimoValor||r.valor:r.valor),0);
+      recEl.innerHTML = `
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;color:var(--text2)">
+            ${recAtivos.length} recorrentes ativos</span>
+          <span style="font-family:'DM Mono',monospace;color:var(--orange);
+            font-weight:500">${fmtBRL(totalRec)}/mês</span>
+        </div>
+        ${recAtivos.slice(0,4).map(r=>`
+          <div style="display:flex;justify-content:space-between;
+            padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+            <div style="font-size:12px">${r.descricao}
+              ${r.variavel?'<span style="font-size:10px;color:var(--text3)"> variável</span>':''}
+            </div>
+            <span style="font-family:\'DM Mono\',monospace;font-size:12px;
+              color:var(--orange)">${fmtBRL(r.variavel?r.ultimoValor||r.valor:r.valor)}</span>
+          </div>`).join('')}
+        ${recAtivos.length > 4 ? `
+          <div style="text-align:center;padding-top:8px">
+            <button class="btn btn-secondary btn-sm"
+              onclick="showSection('recorrentes',null)">
+              Ver todos ${recAtivos.length} recorrentes →</button>
+          </div>` : ''}`;
+    }
+  }
+
+  // ---- CARTÕES ----
+  const txsItau   = txsMes(mes).filter(t=>t.conta==='itau-cartao');
+  const txsDiners = txsMes(mes).filter(t=>
+    t.conta&&t.conta.toLowerCase().includes('diners'));
+  const totalItau   = txsItau.filter(t=>t.tipo==='despesa')
+    .reduce((s,t)=>s+t.valor,0);
+  const totalDiners = txsDiners.filter(t=>t.tipo==='despesa')
+    .reduce((s,t)=>s+t.valor,0);
+
+  const walletEl = document.getElementById('wallet-cards');
+  if (walletEl) walletEl.innerHTML = `
+    <div class="wallet-card"
+      style="background:linear-gradient(135deg,#E67E22,#D35400);
+      cursor:pointer" onclick="showSection('lancamentos',null)">
       <div class="wallet-card-bank">Itaú · Cartão de Crédito</div>
       <div class="wallet-card-num">•••• 2812 / 4141</div>
       <div class="wallet-card-label">FATURA DO MÊS</div>
       <div class="wallet-card-balance">${fmtBRL(totalItau)}</div>
     </div>
-    ${totalDiners > 0 || txsCartaoDiners.length > 0 ? `
-    <div class="wallet-card" style="background:linear-gradient(135deg,#1A237E,#283593)">
+    ${totalDiners>0?`
+    <div class="wallet-card"
+      style="background:linear-gradient(135deg,#1A237E,#283593)">
       <div class="wallet-card-bank">Caixa · Diners Club</div>
       <div class="wallet-card-num">•••• Diners</div>
       <div class="wallet-card-label">FATURA DO MÊS</div>
       <div class="wallet-card-balance">${fmtBRL(totalDiners)}</div>
-    </div>` : ''}
-  `;
+    </div>`:''}`;
 
-  // Contas bancárias
-  const txsItauCC = txsMes(mes).filter(t =>
-    t.conta === 'itau-corrente' || (t.conta && t.conta.includes('corrente'))
-  );
-  const txsBradesco = txsMes(mes).filter(t =>
-    t.conta && t.conta.toLowerCase().includes('bradesco')
-  );
-  const saldoItauCC   = txsItauCC.reduce((s,t)=>s+(t.tipo==='receita'?t.valor:-t.valor),0);
-  const saldoBradesco = txsBradesco.reduce((s,t)=>s+(t.tipo==='receita'?t.valor:-t.valor),0);
+  // ---- CONTAS ----
+  const txsItauCC   = txsMes(mes).filter(t=>t.conta&&
+    (t.conta==='itau-corrente'||t.conta.includes('corrente')));
+  const txsBradesco = txsMes(mes).filter(t=>t.conta&&
+    t.conta.toLowerCase().includes('bradesco'));
+  const txsNubank   = txsMes(mes).filter(t=>t.conta&&
+    t.conta.toLowerCase().includes('nubank'));
+  const saldoItauCC   = txsItauCC.reduce((s,t)=>
+    s+(t.tipo==='receita'?t.valor:-t.valor),0);
+  const saldoBradesco = txsBradesco.reduce((s,t)=>
+    s+(t.tipo==='receita'?t.valor:-t.valor),0);
+  const saldoNubank   = txsNubank.reduce((s,t)=>
+    s+(t.tipo==='receita'?t.valor:-t.valor),0);
 
-  const contaCards = document.getElementById('conta-cards');
-  if (contaCards) {
-    contaCards.innerHTML = `
-      <div class="wallet-card" style="background:linear-gradient(135deg,#1565C0,#1976D2)">
-        <div class="wallet-card-bank">Itaú · Conta Corrente</div>
-        <div class="wallet-card-num">Conta Corrente</div>
-        <div class="wallet-card-label">SALDO ESTIMADO</div>
-        <div class="wallet-card-balance">${fmtBRL(saldoItauCC)}</div>
-      </div>
-      ${saldoBradesco !== 0 || txsBradesco.length > 0 ? `
-      <div class="wallet-card" style="background:linear-gradient(135deg,#B71C1C,#C62828)">
-        <div class="wallet-card-bank">Bradesco · Conta Corrente</div>
-        <div class="wallet-card-num">Conta Corrente</div>
-        <div class="wallet-card-label">SALDO ESTIMADO</div>
-        <div class="wallet-card-balance">${fmtBRL(saldoBradesco)}</div>
-      </div>` : ''}
-    `;
-  }
+  const contaEl = document.getElementById('conta-cards');
+  if (contaEl) contaEl.innerHTML = `
+    <div class="wallet-card"
+      style="background:linear-gradient(135deg,#1565C0,#1976D2)">
+      <div class="wallet-card-bank">Itaú · Conta Corrente</div>
+      <div class="wallet-card-label">SALDO ESTIMADO</div>
+      <div class="wallet-card-balance"
+        style="color:${saldoItauCC>=0?'white':'#FFCDD2'}">
+        ${fmtBRL(saldoItauCC)}</div>
+    </div>
+    ${saldoBradesco!==0||txsBradesco.length>0?`
+    <div class="wallet-card"
+      style="background:linear-gradient(135deg,#B71C1C,#C62828)">
+      <div class="wallet-card-bank">Bradesco · Conta Corrente</div>
+      <div class="wallet-card-label">SALDO ESTIMADO</div>
+      <div class="wallet-card-balance">${fmtBRL(saldoBradesco)}</div>
+    </div>`:''}
+    ${saldoNubank!==0||txsNubank.length>0?`
+    <div class="wallet-card"
+      style="background:linear-gradient(135deg,#6C3483,#8E44AD)">
+      <div class="wallet-card-bank">Nubank · Conta Digital</div>
+      <div class="wallet-card-label">SALDO ESTIMADO</div>
+      <div class="wallet-card-balance">${fmtBRL(saldoNubank)}</div>
+    </div>`:''}`;
 
-  // Destroy old charts before recreating
-  destroyChart('donut'); destroyChart('area');
-
-  // Donut chart
+  // ---- DONUT COM LEGENDA MANUAL ----
   const catData = gastosPorCategoria(mes);
-  const ctx1 = document.getElementById('chart-donut').getContext('2d');
-  S.charts.donut = new Chart(ctx1, {
-    type: 'doughnut',
-    data: {
-      labels: catData.map(([c])=>c),
-      datasets: [{
-        data: catData.map(([,v])=>v),
-        backgroundColor: catData.map(([c])=>CORES[c]||'#8E8E93'),
-        borderWidth: 0, hoverOffset: 4
-      }]
-    },
-    options: {
-      cutout: '65%',
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: {
-          display: true,
-          position: 'right',
-          labels: {
-            color: '#AEAEB2',
-            font: { size: 11, family: "'DM Sans'" },
-            padding: 12,
-            boxWidth: 10,
-            boxHeight: 10,
-            usePointStyle: true,
-            pointStyleWidth: 10,
-            generateLabels: (chart) => {
-              const data = chart.data;
-              return data.labels.map((label, i) => ({
-                text: `${label}  ${fmtBRL(data.datasets[0].data[i])}`,
-                fillStyle: data.datasets[0].backgroundColor[i],
-                strokeStyle: 'transparent',
-                pointStyle: 'circle',
-                index: i
-              }));
-            }
-          }
+  if (!S.charts.donut && catData.length > 0) {
+    const ctx = document.getElementById('chart-donut')?.getContext('2d');
+    if (ctx) {
+      S.charts.donut = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: catData.map(([c])=>c),
+          datasets: [{
+            data: catData.map(([,v])=>v),
+            backgroundColor: catData.map(([c])=>CORES[c]||'#8E8E93'),
+            borderWidth: 0, hoverOffset: 4
+          }]
         },
-        tooltip: {
-          callbacks: {
-            label: ctx => `${ctx.label}: ${fmtBRL(ctx.raw)}`
+        options: {
+          cutout:'68%', responsive:true, maintainAspectRatio:true,
+          plugins: {
+            legend:{display:false},
+            tooltip:{callbacks:{
+              label: ctx=>`${ctx.label}: ${fmtBRL(ctx.raw)}`
+            }}
           }
         }
-      }
-    }
-  });
-
-  // Evolução do Patrimônio por ano
-  destroyChart('area');
-  const patrimonioAno = {};
-  (S.patrimonio || []).forEach(p => {
-    if (!patrimonioAno[p.ano]) patrimonioAno[p.ano] = 0;
-    patrimonioAno[p.ano] += p.valor;
-  });
-  const anosLabels = Object.keys(patrimonioAno).sort();
-  const anosValues = anosLabels.map(a => patrimonioAno[a]);
-
-  const ctx2 = document.getElementById('chart-area').getContext('2d');
-  const hasPatrimonio = anosLabels.length > 0;
-
-  if (hasPatrimonio) {
-    const grad2 = ctx2.createLinearGradient(0,0,0,200);
-    grad2.addColorStop(0,'rgba(10,132,255,.3)');
-    grad2.addColorStop(1,'rgba(0,0,0,0)');
-    S.charts.area = new Chart(ctx2, {
-      type: 'line',
-      data: {
-        labels: anosLabels,
-        datasets: [{
-          label: 'Patrimônio Total',
-          data: anosValues,
-          borderColor: 'var(--blue)',
-          backgroundColor: grad2,
-          borderWidth: 2,
-          pointRadius: 4,
-          pointBackgroundColor: 'var(--blue)',
-          fill: true, tension: 0.3
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: {
-            label: ctx => `Patrimônio: ${fmtBRL(ctx.raw)}`
-          }}
-        },
-        scales: {
-          x: { grid:{color:'rgba(255,255,255,.04)'},
-               ticks:{color:'#636366',font:{size:10}} },
-          y: { grid:{color:'rgba(255,255,255,.04)'},
-               ticks:{color:'#636366',font:{size:10},
-               callback: v => 'R$'+v.toLocaleString('pt-BR')}}
-        }
-      }
-    });
-  } else {
-    ctx2.clearRect(0,0,ctx2.canvas.width,ctx2.canvas.height);
-    const areaCard = ctx2.canvas.closest('.chart-card');
-    if (areaCard && !areaCard.querySelector('.chart-empty')) {
-      areaCard.insertAdjacentHTML('beforeend',
-        '<div class="chart-empty" style="text-align:center;padding:24px 16px;color:var(--text3);font-size:13px">' +
-        '📊 Importe dados do Imposto de Renda ou<br>extratos de investimentos para ver a evolução do patrimônio.' +
-        '</div>');
+      });
     }
   }
 
-  // Alertas
+  // Legenda manual do donut
+  const legendaEl = document.getElementById('donut-legenda');
+  if (legendaEl) {
+    const total = catData.reduce((s,[,v])=>s+v,0);
+    legendaEl.innerHTML = catData.slice(0,8).map(([cat,val])=>`
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:50%;
+          background:${CORES[cat]||'#8E8E93'};flex-shrink:0"></span>
+        <span style="font-size:12px;flex:1;color:var(--text2)">${cat}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:12px;
+          color:var(--text)">${fmtBRL(val)}</span>
+        <span style="font-size:10px;color:var(--text3);width:32px;
+          text-align:right">${total>0?((val/total)*100).toFixed(0):'0'}%</span>
+      </div>`).join('');
+  }
+
   renderAlertas(mes);
+  updateHeaderBalance();
 }
 
 function summaryCard(label, color, value, sub) {
