@@ -92,6 +92,14 @@ function parseDados(raw) {
     const colJ = r[9];   // Observação
     const colK = r[10];  // Mês/Ano
 
+    // Detectar linha no formato antigo (GPS nas colunas 5 e 6)
+    const possivelGPS = (typeof r[5] === 'number' && Math.abs(r[5]) > 20) ||
+                        (typeof r[6] === 'number' && Math.abs(r[6]) > 20);
+    if (possivelGPS) {
+      console.warn('Linha ignorada — formato antigo com GPS:', r[2]);
+      continue;
+    }
+
     const id       = colA || idCount++;
     const valor    = parseValorBR(colD);
     const tipo     = colE || (valor < 0 ? 'despesa' : 'receita');
@@ -101,7 +109,28 @@ function parseDados(raw) {
     const origem   = colI ? String(colI) : 'manual';
     const obs      = colJ ? String(colJ) : '';
     const mesAno   = colK ? String(colK) : getMesAtual();
-    const data     = colB ? new Date(colB) : new Date();
+    let data;
+    const colData = r[1];
+    if (!colData) {
+      data = new Date();
+    } else if (typeof colData === 'number') {
+      // Número serial do Excel → Date
+      data = new Date((colData - 25569) * 86400 * 1000);
+    } else {
+      const s = String(colData);
+      if (s.includes('/')) {
+        const p = s.split('/');
+        if (p.length === 3) {
+          data = new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
+        } else if (p.length === 2) {
+          const ma = String(r[10] || getMesAtual()).split('-');
+          data = new Date(`${ma[0]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
+        }
+      } else {
+        data = new Date(s);
+      }
+      if (isNaN(data?.getTime())) data = new Date();
+    }
 
     txs.push({
       id, rowIndex: i + 1,

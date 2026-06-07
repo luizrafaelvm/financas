@@ -311,13 +311,28 @@ async function syncGastosCartao() {
 
     // 4) Gravar novas linhas na aba Dados em lotes de 200
     if (novas.length > 0) {
-      // Montar linhas antes de gravar
-      const novasLinhas = novas.map(tx => [
-        tx.colA, tx.colB, tx.colC, tx.colD, tx.colE,
-        tx.colF, tx.colG, tx.colH,
-        tx.tipo, tx.cat, tx.sub, tx.conta,
-        'cartao-automatico', tx.mesAno, '', ''
-      ]);
+      // Montar linhas no formato da aba Lançamentos (11 colunas) — sem lat/lon
+      const novasLinhas = novas.map(tx => {
+        const d = tx.data instanceof Date ? tx.data : new Date(tx.data);
+        const diaNum = d.getDate();
+        const mesNum = d.getMonth() + 1;
+        const anoInferido = d.getFullYear();
+        const dataSyncStr = `${String(diaNum).padStart(2,'0')}/${String(mesNum).padStart(2,'0')}/${anoInferido}`;
+        const valorSyncSigned = -Math.abs(tx.valor);
+        return [
+          Date.now() + Math.random(), // ID único
+          dataSyncStr,                // Data DD/MM/YYYY
+          String(tx.colC || ''),      // Descrição
+          valorSyncSigned,            // Valor (negativo = despesa)
+          tx.tipo,                    // Tipo
+          tx.cat,                     // Categoria
+          tx.sub,                     // Subcategoria
+          tx.conta,                   // Conta
+          'cartao-automatico',        // Origem
+          String(tx.colH || ''),      // Observação
+          tx.mesAno                   // Mês/Ano
+        ];
+      });
 
       const LOTE_SYNC = 200;
       for (let i = 0; i < novasLinhas.length; i += LOTE_SYNC) {

@@ -213,23 +213,26 @@ function renderLancamentos() {
   body.innerHTML = txs.map(t => {
     const cor   = t.tipo==='receita' ? 'var(--green)' : 'var(--red)';
     const sinal = t.tipo==='receita' ? '+' : '-';
-    const orig  = {
-      'cartao-automatico': '🤖',
-      'manual': '✍️',
-      'csv-import': '📄',
-      'ofx-import': '📄',
-      'sms-automatico': '📱'
-    }[t.origem] || '•';
+    const origMap = {
+      'cartao-automatico': '🤖 Auto',
+      'manual':            '✍️ Manual',
+      'csv-import':        '📄 CSV',
+      'ofx-import':        '📄 OFX',
+      'sms-automatico':    '📱 SMS'
+    };
+    const origLabel = origMap[t.origem] || '• ' + (t.origem || 'desconhecido');
     const dot   = `<span class="cat-dot" style="background:${CORES[t.categoria]||'#8E8E93'}"></span>`;
     return `<tr>
       <td style="color:var(--text2);font-size:12px;white-space:nowrap">${fmtData(t.data)}</td>
       <td>
         <div style="font-size:13px">${t.descricao}</div>
-        ${t.subcategoria?`<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>`:''}
+        ${t.subcategoria && !t.subcategoria.includes('-') && t.subcategoria !== 'Não categorizado'
+          ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>`
+          : ''}
       </td>
       <td><div style="display:flex;align-items:center;gap:6px">${dot}<span style="font-size:12px">${t.categoria}</span></div></td>
       <td><span class="badge badge-gray" style="font-size:10px">${t.conta}</span></td>
-      <td style="font-size:16px" title="${t.origem}">${orig}</td>
+      <td style="font-size:12px;color:var(--text2)">${origLabel}</td>
       <td style="text-align:right;font-family:'DM Mono',monospace;color:${cor};font-size:14px;white-space:nowrap">
         ${sinal}${fmtBRL(t.valor)}
       </td>
