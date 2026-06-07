@@ -76,71 +76,109 @@ function parseDados(raw) {
   if (!raw || raw.length < 2) return [];
   const txs = [];
   let idCount = 1;
+
   for (let i = 1; i < raw.length; i++) {
     const r = raw[i];
     if (!r || r.every(c => c === null || c === '' || c === undefined)) continue;
 
-    const colA = r[0];   // ID
-    const colB = r[1];   // Data (formato Date object ou string)
-    const colC = r[2];   // Descrição
-    const colD = r[3];   // Valor (número com sinal — negativo = despesa)
-    const colE = r[4];   // Tipo (receita/despesa)
-    const colF = r[5];   // Categoria
-    const colG = r[6];   // Subcategoria
-    const colH = r[7];   // Conta
-    const colI = r[8];   // Origem
-    const colJ = r[9];   // Observação
-    const colK = r[10];  // Mês/Ano
+    // Detectar formato pela coluna 5:
+    // Formato GPS (antigo 16 col): col5 é número de coordenada GPS (valor absoluto > 20)
+    // Formato correto (11 col): col5 é string de categoria
+    const col5 = r[5];
+    const isFormatoGPS = (typeof col5 === 'number' && Math.abs(col5) > 20);
 
-    // Detectar linha no formato antigo (GPS nas colunas 5 e 6)
-    const possivelGPS = (typeof r[5] === 'number' && Math.abs(r[5]) > 20) ||
-                        (typeof r[6] === 'number' && Math.abs(r[6]) > 20);
-    if (possivelGPS) {
-      console.warn('Linha ignorada — formato antigo com GPS:', r[2]);
-      continue;
-    }
+    let id, data, descricao, valor, tipo, cat, sub, conta, origem, obs, mesAno;
 
-    const id       = colA || idCount++;
-    const valor    = parseValorBR(colD);
-    const tipo     = colE || (valor < 0 ? 'despesa' : 'receita');
-    const cat      = colF ? String(colF) : categorizar(String(colC||'')).cat;
-    const sub      = colG ? String(colG) : categorizar(String(colC||'')).sub;
-    const conta    = colH ? String(colH) : 'itau-cartao';
-    const origem   = colI ? String(colI) : 'manual';
-    const obs      = colJ ? String(colJ) : '';
-    const mesAno   = colK ? String(colK) : getMesAtual();
-    let data;
-    const colData = r[1];
-    if (!colData) {
-      data = new Date();
-    } else if (typeof colData === 'number') {
-      // Número serial do Excel → Date
-      data = new Date((colData - 25569) * 86400 * 1000);
-    } else {
-      const s = String(colData);
-      if (s.includes('/')) {
-        const p = s.split('/');
-        if (p.length === 3) {
-          data = new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
-        } else if (p.length === 2) {
-          const ma = String(r[10] || getMesAtual()).split('-');
-          data = new Date(`${ma[0]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
-        }
+    if (isFormatoGPS) {
+      // ---- FORMATO ANTIGO GASTOSCARTAO (16 colunas) ----
+      // 0:Date 1:Time 2:Descricao 3:Valor 4:Cartao
+      // 5:Lat 6:Lng 7:Obs 8:Tipo 9:Cat 10:Sub
+      // 11:Conta 12:Origem 13:MesAno 14:ID_NF 15:ID
+      const colDate = r[0];
+      const colObs  = r[7];
+      mesAno    = r[13] ? String(r[13]) : getMesAtual();
+      descricao = String(r[2] || '');
+      valor     = parseValorBR(r[3]);
+      cat       = r[9]  ? String(r[9])  : categorizar(descricao).cat;
+      sub       = r[10] ? String(r[10]) : categorizar(descricao).sub;
+      conta     = r[11] ? String(r[11]) : 'itau-cartao';
+      origem    = r[12] ? String(r[12]) : 'cartao-automatico';
+      obs       = String(colObs || '');
+      tipo      = r[8]  ? String(r[8])  : 'despesa';
+      id        = r[15] || idCount++;
+
+      // Reconstruir data: colDate pode ser "22/05" ou "22/05/2025"
+      const partsD = String(colDate || '').split('/');
+      if (partsD.length === 3) {
+        data = new Date(`${partsD[2]}-${partsD[1].padStart(2,'0')}-${partsD[0].padStart(2,'0')}T00:00:00`);
+      } else if (partsD.length === 2) {
+        const [anoMA, mesMA] = mesAno.split('-');
+        data = new Date(`${anoMA}-${partsD[1].padStart(2,'0')}-${partsD[0].padStart(2,'0')}T00:00:00`);
       } else {
-        data = new Date(s);
+        data = new Date();
       }
-      if (isNaN(data?.getTime())) data = new Date();
+      if (isNaN(data.getTime())) data = new Date();
+
+    } else {
+      // ---- FORMATO CORRETO LANÇAMENTOS (11 colunas) ----
+      // 0:ID 1:Data 2:Descrição 3:Valor 4:Tipo
+      // 5:Categoria 6:Subcategoria 7:Conta 8:Origem
+      // 9:Observação 10:Mês/Ano
+      id        = r[0] || idCount++;
+      descricao = String(r[2] || '');
+      mesAno    = r[10] ? String(r[10]) : getMesAtual();
+      cat       = r[5] ? String(r[5]) : categorizar(descricao).cat;
+      sub       = r[6] ? String(r[6]) : categorizar(descricao).sub;
+      conta     = r[7] ? String(r[7]) : 'itau-cartao';
+      origem    = r[8] ? String(r[8]) : 'manual';
+      obs       = String(r[9] || '');
+      tipo      = r[4] ? String(r[4]) : 'despesa';
+
+      // Valor: pode ser negativo (despesa) ou positivo (receita)
+      const valorRaw = r[3];
+      if (typeof valorRaw === 'number') {
+        valor = Math.abs(valorRaw);
+        if (valorRaw < 0) tipo = 'despesa';
+        if (valorRaw > 0 && String(r[4]).includes('receita')) tipo = 'receita';
+      } else {
+        valor = parseValorBR(valorRaw);
+      }
+
+      // Parse de data — vários formatos possíveis
+      const colData = r[1];
+      if (!colData) {
+        data = new Date();
+      } else if (typeof colData === 'number') {
+        // Serial do Excel
+        data = new Date((colData - 25569) * 86400 * 1000);
+      } else {
+        const s = String(colData);
+        if (s.includes('/')) {
+          const p = s.split('/');
+          if (p.length === 3) {
+            data = new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
+          } else {
+            const [anoMA, mesMA] = mesAno.split('-');
+            data = new Date(`${anoMA}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}T00:00:00`);
+          }
+        } else {
+          data = new Date(s);
+        }
+      }
+      if (!data || isNaN(data.getTime())) data = new Date();
     }
 
+    idCount++;
     txs.push({
       id, rowIndex: i + 1,
-      data, descricao: String(colC || ''),
+      data, hora: '',
+      descricao,
       valor: Math.abs(valor),
       valorSigned: tipo === 'receita' ? Math.abs(valor) : -Math.abs(valor),
       tipo, categoria: cat, subcategoria: sub,
       conta, origem, observacao: obs,
-      mesAno, idNF: '', hora: '',
-      categorizadoNoExcel: !!colF
+      mesAno, idNF: '',
+      categorizadoNoExcel: !!cat && cat !== 'Outros'
     });
   }
   return txs;
