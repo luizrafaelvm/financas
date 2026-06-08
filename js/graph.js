@@ -319,15 +319,15 @@ async function syncGastosCartao() {
       const chunk = raw.slice(start, start + CHUNK);
       for (const r of chunk) {
         if (!r) continue;
-        /* === DEBUG-GC inicio — remover após fix === */
+        /* === DEBUG-GC inicio === */
         if (!window._gcDbg) window._gcDbg = 0;
-        if (window._gcDbg < 40) {
-          console.warn('[GC]', window._gcDbg++,
-            'len=' + r.length,
-            '| A=' + r[0],
-            '| N=' + r[13],
-            '| O=' + r[14],
-            '| P=' + r[15]);
+        if (window._gcDbg < 5) {
+          const cols = [];
+          for (let ci = 0; ci < r.length; ci++) {
+            cols.push('[' + ci + ']="' + r[ci] + '"');
+          }
+          console.warn('[GC-ALL] row' + window._gcDbg + ': ' + cols.join(' | '));
+          window._gcDbg++;
         }
         /* === DEBUG-GC fim === */
         const descricao = String(r[2] || '').trim();
