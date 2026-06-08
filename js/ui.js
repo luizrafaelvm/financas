@@ -390,3 +390,238 @@ function cadastrarSugestao(s) {
   document.getElementById('modal-recorrente')
     .classList.remove('hidden');
 }
+
+/* === RELATÓRIO MENSAL === */
+function popularSelectRelMes() {
+  const sel = document.getElementById('rel-mes-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const meses = (S._mesesDisponiveis || []).slice(0, 12);
+  const nomes = ['Jan','Fev','Mar','Abr','Mai','Jun',
+                 'Jul','Ago','Set','Out','Nov','Dez'];
+  meses.forEach(m => {
+    const [ano, mes] = m.split('-');
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = `${nomes[parseInt(mes)-1]}/${ano}`;
+    if (m === S.mesAtual) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function montarContextoRelatorio(mesAno) {
+  const res   = resumoMes(mesAno);
+  const cats  = gastosPorCategoria(mesAno);
+  const txs   = txsMes(mesAno);
+  const top10 = txs
+    .filter(t => t.tipo === 'despesa')
+    .sort((a,b) => b.valor - a.valor)
+    .slice(0, 10)
+    .map(t => ({
+      desc: t.descricao, valor: t.valor,
+      cat: t.categoria, data: t.data
+    }));
+
+  const [ano, mes] = mesAno.split('-').map(Number);
+  const dtAnt = new Date(ano, mes - 2, 1);
+  const mesAnt = `${dtAnt.getFullYear()}-`
+    + String(dtAnt.getMonth()+1).padStart(2,'0');
+  const resAnt = resumoMes(mesAnt);
+
+  const recAtivos = (S.recorrentes||[]).filter(r => r.ativo);
+  const totalRec  = recAtivos.reduce(
+    (s,r) => s + (r.ultimoValor||r.valor), 0);
+
+  const renda = parseFloat(
+    S.config?.renda_mensal_estimada ||
+    localStorage.getItem('rfm_renda') || 0);
+
+  return {
+    mesAno, renda,
+    receitas:  res.receitas,
+    despesas:  res.despesas,
+    saldo:     res.receitas - res.despesas,
+    comprometimento: renda > 0
+      ? Math.round(res.despesas / renda * 100) : null,
+    categorias: cats.map(([cat, total]) => ({
+      nome: cat, valor: total,
+      pctRenda: renda > 0
+        ? Math.round(total / renda * 100) : null
+    })),
+    top10Gastos: top10,
+    recorrentes: {
+      total: totalRec,
+      itens: recAtivos.map(r => ({
+        desc: r.descricao,
+        valor: r.ultimoValor || r.valor,
+        cat: r.categoria,
+        variavel: r.variavel
+      }))
+    },
+    comparativoMesAnterior: {
+      mesAno: mesAnt,
+      receitas: resAnt.receitas,
+      despesas: resAnt.despesas,
+      variacaoDespesas: resAnt.despesas > 0
+        ? Math.round(
+            (res.despesas - resAnt.despesas)
+            / resAnt.despesas * 100)
+        : null
+    }
+  };
+}
+
+async function gerarRelatorioMensal() {
+  const apiKey = localStorage.getItem('rfm_claude_key');
+  if (!apiKey) {
+    alert('Configure a Claude API Key em Configurações primeiro.');
+    showSection('configuracoes', null);
+    return;
+  }
+
+  const mesAno = document.getElementById('rel-mes-select')?.value
+    || S.mesAtual;
+  const [ano, mes] = mesAno.split('-');
+  const nomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const nomeMes = `${nomes[parseInt(mes)-1]}/${ano}`;
+
+  const ctx = montarContextoRelatorio(mesAno);
+
+  const container = document.getElementById('chat-messages');
+  container.innerHTML +=
+    `<div class="msg-bubble msg-user">📊 Gerar relatório completo de ${nomeMes}</div>`;
+
+  const typingId = 'typing-' + Date.now();
+  container.innerHTML +=
+    `<div class="msg-bubble msg-ai"><span id="${typingId}">⏳ Analisando ${nomeMes}...</span></div>`;
+  container.scrollTop = container.scrollHeight;
+
+  const systemPrompt = `Você é um consultor financeiro pessoal direto, \
+empático e sem julgamentos.
+O usuário é Rafael, advogado, sócio de escritório, pai de duas filhas.
+
+REGRAS ABSOLUTAS — jamais violar:
+- Medicamentos antidepressivos e saúde mental: ESSENCIAIS, \
+nunca questionar ou sugerir corte
+- Pensão alimentícia (duas filhas): obrigação legal, \
+nunca sugerir redução
+- Financiamento imobiliário: obrigação contratual, nunca sugerir corte
+- Categorias protegidas: Moradia, Filhas, Saúde, Financiamentos
+
+Gere um relatório mensal estruturado com exatamente estas seções:
+
+## 📋 RESUMO EXECUTIVO
+3-4 frases: saldo do mês, comprometimento de renda, \
+comparativo com mês anterior.
+
+## 📊 ANÁLISE POR CATEGORIA
+Top 5 categorias de gasto com valor e % da renda. \
+Destaque as que merecem atenção.
+
+## 🔝 TOP 3 MAIORES GASTOS
+Os três maiores gastos individuais com contexto breve.
+
+## 🔄 RECORRENTES
+Total de compromissos fixos e variáveis. \
+Algum que merece revisão (exceto os protegidos)?
+
+## 🚨 ALERTAS
+Categorias em excesso, padrões preocupantes ou \
+variações bruscas vs. mês anterior.
+
+## 💡 ONDE ECONOMIZAR
+2-3 sugestões concretas e realistas \
+(apenas categorias não protegidas).
+
+## ✅ 3 AÇÕES PARA O PRÓXIMO MÊS
+Ações específicas e mensuráveis que Rafael pode tomar agora.
+
+Use valores em R$. Seja direto, prático e empático. \
+Responda em português brasileiro.`;
+
+  const userMsg = `Dados financeiros de ${nomeMes}:\n\n`
+    + JSON.stringify(ctx, null, 2)
+    + `\n\nGere o relatório mensal completo.`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMsg }]
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(()=>({}));
+      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    const texto = data.content?.[0]?.text || 'Sem resposta.';
+
+    const typingEl = document.getElementById(typingId);
+    if (typingEl) {
+      typingEl.closest('.msg-bubble').innerHTML =
+        formatarMarkdownRelatorio(texto);
+    }
+
+    window._ultimoRelatorio = texto;
+    document.getElementById('btn-copiar-relatorio').style.display = '';
+    container.scrollTop = container.scrollHeight;
+
+  } catch(e) {
+    const typingEl = document.getElementById(typingId);
+    if (typingEl) {
+      typingEl.closest('.msg-bubble').innerHTML =
+        `❌ Erro: ${escHtml(e.message)}`;
+    }
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function copiarRelatorio() {
+  if (!window._ultimoRelatorio) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(window._ultimoRelatorio)
+      .then(() => showToast('📋 Relatório copiado!','verde'))
+      .catch(() => _copiarFallback());
+  } else {
+    _copiarFallback();
+  }
+}
+
+function _copiarFallback() {
+  const ta = document.createElement('textarea');
+  ta.value = window._ultimoRelatorio;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  showToast('📋 Copiado!','verde');
+}
+
+function formatarMarkdownRelatorio(txt) {
+  return txt
+    .replace(/^## (.+)$/gm,
+      '<div style="font-size:13px;font-weight:700;'
+      +'color:var(--blue);margin:18px 0 6px 0">$1</div>')
+    .replace(/^### (.+)$/gm,
+      '<div style="font-size:12px;font-weight:600;'
+      +'color:var(--text2);margin:10px 0 4px 0">$1</div>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm,
+      '<div style="padding-left:12px;margin:2px 0">'
+      +'· $1</div>')
+    .replace(/\n{2,}/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+}

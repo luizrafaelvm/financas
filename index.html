@@ -428,6 +428,25 @@
             Olá, Rafael! Sou seu assistente financeiro pessoal. Analiso seus dados financeiros e te ajudo a entender onde está o dinheiro e onde é possível economizar. Como posso te ajudar hoje?
           </div>
         </div>
+        <div class="card card-p" style="margin-bottom:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">
+            📊 Relatório Mensal Automático</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select class="form-select" id="rel-mes-select"
+              style="width:auto;min-width:160px"></select>
+            <button class="btn btn-primary btn-sm"
+              onclick="gerarRelatorioMensal()">
+              ✨ Gerar Relatório</button>
+            <button class="btn btn-secondary btn-sm"
+              id="btn-copiar-relatorio" style="display:none"
+              onclick="copiarRelatorio()">
+              📋 Copiar</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px">
+            Análise completa com diagnóstico, alertas e sugestões de
+            economia gerada por IA.</div>
+        </div>
+
         <div class="chat-chips" id="chat-chips">
           <span class="chip" onclick="sendChip(this)">Onde estão meus maiores gastos?</span>
           <span class="chip" onclick="sendChip(this)">O que posso cortar sem impacto?</span>

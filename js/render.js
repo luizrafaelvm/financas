@@ -60,6 +60,7 @@ function renderSection(id) {
           relSel.appendChild(opt);
         });
       }
+      popularSelectRelMes?.();
       break;
     }
     case 'configuracoes': initConfiguracoes?.(); break;
