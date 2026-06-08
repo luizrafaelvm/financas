@@ -27,6 +27,62 @@ function reconstructDate(colA, mesAno) {
   } catch { return new Date(); }
 }
 
+/**
+ * Reconstrói a data de uma linha do GastosCartao de forma defensiva.
+ * colA  = coluna A: "DD/MM" ou "DD/MM/YYYY"
+ * colN  = coluna N: esperado "YYYY-MM" (MesAno canônico)
+ * colO  = coluna O: fallback adicional
+ */
+function parseDateGC(colA, colN, colO) {
+  let year = null, month = null;
+
+  const tryParse = (val) => {
+    if (val === null || val === undefined || val === '') return false;
+    const s = String(val).trim();
+
+    // Formato canônico YYYY-MM
+    let m = s.match(/^(20\d{2})[\/\-](\d{1,2})$/);
+    if (m) { year = +m[1]; month = +m[2]; return true; }
+
+    // Formato invertido MM/YYYY ou MM-YYYY
+    m = s.match(/^(\d{1,2})[\/\-](20\d{2})$/);
+    if (m) { month = +m[1]; year = +m[2]; return true; }
+
+    // Número serial do Excel (40000–50000 ≈ anos 2009–2036)
+    const n = parseFloat(s);
+    if (!isNaN(n) && n > 40000 && n < 50000) {
+      const d = new Date(Math.round((n - 25569) * 86400000));
+      year  = d.getUTCFullYear();
+      month = d.getUTCMonth() + 1;
+      return true;
+    }
+
+    return false;
+  };
+
+  // Tentar colN primeiro, colO como fallback
+  if (!tryParse(colN)) tryParse(colO);
+
+  // Validar sanidade: aceitar somente 2022–2028
+  if (!year || year < 2022 || year > 2028) {
+    const now   = new Date();
+    const parts = String(colA || '').split('/');
+    const d     = parseInt(parts[0]) || 1;
+    const mo    = parseInt(parts[1]) || (now.getMonth() + 1);
+    year  = (mo > now.getMonth() + 1) ? now.getFullYear() - 1 : now.getFullYear();
+    month = mo;
+    const r = new Date(year, month - 1, d);
+    return isNaN(r.getTime()) ? new Date() : r;
+  }
+
+  // Extrair dia de colA
+  const parts = String(colA || '1/1').split('/');
+  const day   = Math.max(1, parseInt(parts[0]) || 1);
+
+  const result = new Date(year, month - 1, day);
+  return isNaN(result.getTime()) ? new Date() : result;
+}
+
 function parseDataFlexivel(colData, mesAno) {
   if (!colData) return new Date();
   if (typeof colData === 'number') {

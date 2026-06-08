@@ -314,27 +314,31 @@ async function syncGastosCartao() {
     // 3) Processar em chunks de 500, inferindo MesAno cronologicamente
     const CHUNK = 500;
     const novas = [];
-    let anoBase = S.gastosCartaoAnoBase;
-    let prevMes = null;
-
     for (let start = 1; start < raw.length; start += CHUNK) {
       await new Promise(r => setTimeout(r, 0));
       const chunk = raw.slice(start, start + CHUNK);
       for (const r of chunk) {
         if (!r) continue;
+        /* === DEBUG-GC inicio — remover após fix === */
+        if (!window._gcDbg) window._gcDbg = 0;
+        if (window._gcDbg < 40) {
+          console.warn('[GC]', window._gcDbg++,
+            'len=' + r.length,
+            '| A=' + r[0],
+            '| N=' + r[13],
+            '| O=' + r[14],
+            '| P=' + r[15]);
+        }
+        /* === DEBUG-GC fim === */
         const descricao = String(r[2] || '').trim();
         const valor = parseValorBR(r[3]);
         if (!descricao || valor === 0) continue;
 
-        // Heurística de sequência cronológica
-        const partes = String(r[0] || '').split('/');
-        const mes = parseInt(partes[1]) || 1;
-        if (prevMes !== null && mes < prevMes) anoBase++;
-        prevMes = mes;
-        const mesAno = `${anoBase}-${String(mes).padStart(2,'0')}`;
+        const dt     = parseDateGC(r[0], r[13], r[14]);
+        const mesAno = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
 
         // Deduplicação
-        const dataObj = reconstructDate(r[0], mesAno);
+        const dataObj = dt;
         const data = (dataObj && !isNaN(dataObj.getTime())) ? dataObj : new Date();
         const dataStr = (isNaN(new Date(data).getTime()) ? '' : new Date(data).toISOString()).slice(0,10);
         const conta = mapCartao(r[4]);
