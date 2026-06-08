@@ -314,28 +314,45 @@ async function syncGastosCartao() {
     // 3) Processar em chunks de 500, inferindo MesAno cronologicamente
     const CHUNK = 500;
     const novas = [];
+
+    // GastosCartao não tem coluna de ano — inferir por sequência cronológica.
+    // Âncora no registro mais recente (último) e caminha para o passado:
+    // quando o mês AUMENTA ao ir para trás, o ano diminui.
+    const _gcNow = new Date();
+    let _gcAno = _gcNow.getFullYear();
+    const _lastValidRow = raw.slice(1).filter(x => x && String(x[0]||'').includes('/')).pop();
+    if (_lastValidRow) {
+      const _lm = parseInt(String(_lastValidRow[0]).split('/')[1]) || (_gcNow.getMonth()+1);
+      if (_lm > _gcNow.getMonth()+1) _gcAno--;
+    }
+    const _gcAnos = new Array(raw.length).fill(_gcAno);
+    let _gcMesPrev = null;
+    for (let _i = raw.length - 1; _i >= 1; _i--) {
+      const _rr = raw[_i];
+      const _m = (_rr && String(_rr[0]||'').includes('/'))
+        ? (parseInt(String(_rr[0]).split('/')[1]) || 1) : null;
+      if (_m === null) continue;
+      if (_gcMesPrev !== null && _m > _gcMesPrev) _gcAno--;
+      _gcAnos[_i] = _gcAno;
+      _gcMesPrev = _m;
+    }
+
     for (let start = 1; start < raw.length; start += CHUNK) {
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise(resolve => setTimeout(resolve, 0));
       const chunk = raw.slice(start, start + CHUNK);
-      for (const r of chunk) {
+      for (let ri = 0; ri < chunk.length; ri++) {
+        const r = chunk[ri];
         if (!r) continue;
-        /* === DEBUG-GC inicio === */
-        if (!window._gcDbg) window._gcDbg = 0;
-        if (window._gcDbg < 5) {
-          const cols = [];
-          for (let ci = 0; ci < r.length; ci++) {
-            cols.push('[' + ci + ']="' + r[ci] + '"');
-          }
-          console.warn('[GC-ALL] row' + window._gcDbg + ': ' + cols.join(' | '));
-          window._gcDbg++;
-        }
-        /* === DEBUG-GC fim === */
         const descricao = String(r[2] || '').trim();
         const valor = parseValorBR(r[3]);
         if (!descricao || valor === 0) continue;
 
-        const dt     = parseDateGC(r[0], r[13], r[14]);
-        const mesAno = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
+        const _p    = String(r[0] || '').split('/');
+        const gcDia = Math.max(1, parseInt(_p[0]) || 1);
+        const gcMes = parseInt(_p[1]) || (_gcNow.getMonth()+1);
+        const gcAno = _gcAnos[start + ri] || _gcNow.getFullYear();
+        const dt     = new Date(gcAno, gcMes - 1, gcDia);
+        const mesAno = `${gcAno}-${String(gcMes).padStart(2,'0')}`;
 
         // Deduplicação
         const dataObj = dt;
