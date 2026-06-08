@@ -184,6 +184,22 @@
           <button class="btn btn-primary btn-sm" onclick="openModal('lancamento')">+ Novo</button>
         </div>
       </div>
+      <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:20px">
+        <button id="stab-aberto" onclick="switchLancTab('aberto')"
+          style="flex:1;padding:12px 8px;background:none;border:none;
+          border-bottom:2px solid var(--blue);color:var(--text);
+          font-size:14px;font-weight:600;cursor:pointer">
+          ⚡ Em Aberto
+        </button>
+        <button id="stab-hist" onclick="switchLancTab('hist')"
+          style="flex:1;padding:12px 8px;background:none;border:none;
+          border-bottom:2px solid transparent;color:var(--text3);
+          font-size:14px;cursor:pointer">
+          🗂 Histórico OFX
+        </button>
+      </div>
+      <div id="pane-aberto"></div>
+      <div id="pane-hist" style="display:none">
       <div class="filters-row">
         <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="S.paginaLancamentos=1;clearTimeout(window._st);window._st=setTimeout(renderLancamentos,280)">
         <select class="filter-select" id="filter-tipo" onchange="S.paginaLancamentos=1;renderLancamentos()">
@@ -220,6 +236,7 @@
         </div>
       </div>
       <div id="lancamentos-count" style="text-align:center;padding:12px;font-size:12px;color:var(--text3)"></div>
+      </div>
     </div>
 
     <!-- ===== ANÁLISE ===== -->

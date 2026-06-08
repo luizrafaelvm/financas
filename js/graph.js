@@ -270,184 +270,54 @@ async function atualizarRecorrente(id, campos) {
 /* ============================================================
    SYNC GASTOSCARTAO
    ============================================================ */
-let _syncGCRunning = false;
+function _gcParseDate(raw) {
+  if (typeof raw === 'number' && raw > 40000 && raw < 60000) {
+    return new Date(Math.round((raw - 25569) * 86400 * 1000));
+  }
+  const s = String(raw || '').trim();
+  const p = s.split('/');
+  if (p.length === 3) {
+    return new Date(+p[2], +p[1] - 1, +p[0]);
+  }
+  if (p.length === 2) {
+    const day = +p[0], mon = +p[1];
+    const now  = new Date();
+    const year = mon <= now.getMonth() + 1 ? now.getFullYear() : now.getFullYear() - 1;
+    return new Date(year, mon - 1, day);
+  }
+  return new Date();
+}
 
 async function syncGastosCartao() {
-  if (_syncGCRunning) return;
-  _syncGCRunning = true;
   try {
-    // 1) Localizar GastosCartao.xlsx
-    let gcId = S.gastosCartaoFileId;
-    if (gcId) {
-      try { await graphFetch(`/me/drive/items/${gcId}`); }
-      catch { gcId = null; }
-    }
-    if (!gcId) {
-      try {
-        const d = await graphFetch(`/me/drive/root:/Financeiro/GastosCartao.xlsx`);
-        if (d?.id) { gcId = d.id; S.gastosCartaoFileId = d.id; localStorage.setItem('rfm_gastoscartao_id', d.id); }
-      } catch {}
-    }
-    if (!gcId) {
-      try {
-        const s = await graphFetch(`/me/drive/root/search(q='GastosCartao.xlsx')`);
-        const f = s?.value?.find(i => i.name === 'GastosCartao.xlsx');
-        if (f) { gcId = f.id; S.gastosCartaoFileId = f.id; localStorage.setItem('rfm_gastoscartao_id', f.id); }
-      } catch {}
-    }
-    if (!gcId) { showToast('GastosCartao não localizado', 'amarelo'); return; }
+    const token = await getToken();
+    // Lê via tabela "Gastos" — mesmo endpoint do app iPhone
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/Financeiro/GastosCartao.xlsx:/workbook/tables/Gastos/rows`;
+    const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`GastosCartao HTTP ${res.status}`);
+    const json = await res.json();
 
-    // 2) Ler primeira aba (usedRange)
-    const wbSheets = await graphFetch(`/me/drive/items/${gcId}/workbook/worksheets`);
-    const primeiraAba = wbSheets?.value?.[0]?.name;
-    if (!primeiraAba) { showToast('GastosCartao não localizado', 'amarelo'); return; }
+    S.gastosCartao = (json.value || [])
+      .map(r => {
+        const v = r.values[0];
+        return {
+          date:        _gcParseDate(v[0]),
+          timeStr:     String(v[1] || '').trim(),
+          descricao:   String(v[2] || '').trim(),
+          valor:       parseFloat(String(v[3] || '0').replace(',', '.')),
+          cartao:      String(v[4] || '').trim(),
+          lat:         parseFloat(v[5]) || 0,
+          lng:         parseFloat(v[6]) || 0,
+          obs:         String(v[7] || '').trim(),
+          catOverride: String(v[8] || '').trim(),
+        };
+      })
+      .filter(r => r.descricao && r.valor > 0);
 
-    const rangeData = await graphFetch(
-      `/me/drive/items/${gcId}/workbook/worksheets/${encodeURIComponent(primeiraAba)}/usedRange`
-    );
-    const raw = rangeData?.values;
-    if (!raw || raw.length < 2) {
-      showToast('✓ GastosCartao atualizado — nenhuma transação nova', 'verde');
-      return;
-    }
-
-    // 3) Processar em chunks de 500, inferindo MesAno cronologicamente
-    const CHUNK = 500;
-    const novas = [];
-
-    // GastosCartao não tem coluna de ano — inferir por sequência cronológica.
-    // Âncora no registro mais recente (último) e caminha para o passado:
-    // quando o mês AUMENTA ao ir para trás, o ano diminui.
-    const _gcNow = new Date();
-    let _gcAno = _gcNow.getFullYear();
-    const _lastValidRow = raw.slice(1).filter(x => x && String(x[0]||'').includes('/')).pop();
-    if (_lastValidRow) {
-      const _lm = parseInt(String(_lastValidRow[0]).split('/')[1]) || (_gcNow.getMonth()+1);
-      if (_lm > _gcNow.getMonth()+1) _gcAno--;
-    }
-    const _gcAnos = new Array(raw.length).fill(_gcAno);
-    let _gcMesPrev = null;
-    for (let _i = raw.length - 1; _i >= 1; _i--) {
-      const _rr = raw[_i];
-      const _m = (_rr && String(_rr[0]||'').includes('/'))
-        ? (parseInt(String(_rr[0]).split('/')[1]) || 1) : null;
-      if (_m === null) continue;
-      if (_gcMesPrev !== null && _m > _gcMesPrev) _gcAno--;
-      _gcAnos[_i] = _gcAno;
-      _gcMesPrev = _m;
-    }
-
-    for (let start = 1; start < raw.length; start += CHUNK) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      const chunk = raw.slice(start, start + CHUNK);
-      for (let ri = 0; ri < chunk.length; ri++) {
-        const r = chunk[ri];
-        if (!r) continue;
-        const descricao = String(r[2] || '').trim();
-        const valor = parseValorBR(r[3]);
-        if (!descricao || valor === 0) continue;
-
-        const _p    = String(r[0] || '').split('/');
-        const gcDia = Math.max(1, parseInt(_p[0]) || 1);
-        const gcMes = parseInt(_p[1]) || (_gcNow.getMonth()+1);
-        const gcAno = _gcAnos[start + ri] || _gcNow.getFullYear();
-        const dt     = new Date(gcAno, gcMes - 1, gcDia);
-        const mesAno = `${gcAno}-${String(gcMes).padStart(2,'0')}`;
-
-        // Deduplicação
-        const dataObj = dt;
-        const data = (dataObj && !isNaN(dataObj.getTime())) ? dataObj : new Date();
-        const dataStr = (isNaN(new Date(data).getTime()) ? '' : new Date(data).toISOString()).slice(0,10);
-        const conta = mapCartao(r[4]);
-        const existe = S.transactions.some(tx =>
-          (tx.data instanceof Date && !isNaN(tx.data.getTime()) ? tx.data.toISOString().slice(0,10) : '') === dataStr &&
-          tx.descricao === descricao &&
-          tx.valor === valor &&
-          tx.conta === conta
-        );
-        if (existe) continue;
-
-        const { cat, sub } = categorizar(descricao);
-        novas.push({
-          colA: String(r[0] || ''), colB: String(r[1] || ''),
-          colC: descricao, colD: String(r[3] || ''),
-          colE: r[4], colF: r[5] || '', colG: r[6] || '', colH: String(r[7] || ''),
-          tipo: cat === 'Receitas' ? 'receita' : 'despesa',
-          cat, sub, conta, mesAno, data, valor
-        });
-      }
-    }
-
-    // 4) Gravar novas linhas na aba Dados em lotes de 200
-    if (novas.length > 0) {
-      // Montar linhas no formato da aba Lançamentos (11 colunas) — sem lat/lon
-      const novasLinhas = novas.map(tx => {
-        const d = tx.data instanceof Date ? tx.data : new Date(tx.data);
-        const diaNum = d.getDate();
-        const mesNum = d.getMonth() + 1;
-        const anoInferido = d.getFullYear();
-        const dataSyncStr = `${String(diaNum).padStart(2,'0')}/${String(mesNum).padStart(2,'0')}/${anoInferido}`;
-        const valorSyncSigned = -Math.abs(tx.valor);
-        return [
-          Date.now() + Math.random(), // ID único
-          dataSyncStr,                // Data DD/MM/YYYY
-          String(tx.colC || ''),      // Descrição
-          valorSyncSigned,            // Valor (negativo = despesa)
-          tx.tipo,                    // Tipo
-          tx.cat,                     // Categoria
-          tx.sub,                     // Subcategoria
-          tx.conta,                   // Conta
-          'cartao-automatico',        // Origem
-          String(tx.colH || ''),      // Observação
-          tx.mesAno                   // Mês/Ano
-        ];
-      });
-
-      const LOTE_SYNC = 200;
-      for (let i = 0; i < novasLinhas.length; i += LOTE_SYNC) {
-        const lote = novasLinhas.slice(i, i + LOTE_SYNC);
-        await appendRows(SHEET_DADOS, lote);
-        if (i + LOTE_SYNC < novasLinhas.length) {
-          await new Promise(r => setTimeout(r, 300));
-        }
-        // Renovar sessão a cada 5 lotes
-        if ((Math.floor(i / LOTE_SYNC) + 1) % 5 === 0) {
-          S.workbookSessionId = null;
-          await createWorkbookSession();
-        }
-      }
-
-      // Atualizar estado local
-      novas.forEach(tx => {
-        S.transactions.push({
-          id: S.transactions.length + 1,
-          rowIndex: S.transactions.length + 2,
-          data: tx.data, hora: tx.colB,
-          descricao: tx.colC, valor: tx.valor,
-          valorSigned: tx.tipo === 'despesa' ? -tx.valor : tx.valor,
-          tipo: tx.tipo, categoria: tx.cat, subcategoria: tx.sub,
-          conta: tx.conta, origem: 'cartao-automatico',
-          observacao: tx.colH, mesAno: tx.mesAno,
-          idNF: '', categorizadoNoExcel: false
-        });
-      });
-      buildIndex();
-      S._cache = {};
-      novasLinhas.forEach(row => {
-        const m = row[10];
-        if (m) S._mesesCarregados.add(String(m));
-      });
-      if (S._rawDados) {
-        S._mesesDisponiveis = getMesesDoRaw(S._rawDados);
-      }
-      renderAll();
-      showToast(`✓ GastosCartao — ${novas.length} novas transações`, 'verde');
-    } else {
-      showToast('✓ GastosCartao atualizado — nenhuma transação nova', 'verde');
-    }
+    console.log(`[GC] ${S.gastosCartao.length} transações — somente leitura`);
   } catch (e) {
-    console.error('syncGastosCartao:', e);
-  } finally {
-    _syncGCRunning = false;
+    console.error('[GC] Erro:', e.message);
+    S.gastosCartao = [];
   }
+  // NUNCA chamar appendRows ou qualquer escrita no financas-rafael.xlsx aqui
 }

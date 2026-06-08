@@ -126,7 +126,7 @@ async function loadAllData() {
 
     showLoading(false);
     renderAll();
-    setTimeout(() => syncGastosCartao(), 2000);
+    setTimeout(() => syncGastosCartao().then(() => { renderAll(); renderEmAberto(); }), 2000);
   } catch (e) {
     showLoading(false);
     alert('Erro ao carregar dados: ' + e.message);

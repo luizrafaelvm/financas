@@ -44,7 +44,7 @@ function renderSection(id) {
 
   switch(id) {
     case 'home':         renderHome();           break;
-    case 'lancamentos':  renderLancamentos();     break;
+    case 'lancamentos':  renderEmAberto(); renderLancamentos(); break;
     case 'analise':      renderAnalise();         break;
     case 'diagnostico':  renderDiagnostico();     break;
     case 'metas':        renderMetas();           break;
@@ -147,9 +147,13 @@ function renderHome() {
     .filter(r => r.ativo)
     .reduce((s,r) => s + (r.variavel ? r.ultimoValor || r.valor : r.valor), 0);
 
+  const _gcHoje = (S.gastosCartao || []).filter(r => _gcMesStr(r.date) === mes);
+  const totalGC  = _gcHoje.reduce((s, r) => s + r.valor, 0);
+  const despesasExibir = totalGC > 0 ? totalGC : despesas;
+
   document.getElementById('summary-grid').innerHTML = `
     ${summaryCard('RECEITAS','var(--green)',fmtBRL(receitas),'do mês')}
-    ${summaryCard('DESPESAS','var(--red)',fmtBRL(despesas),'do mês')}
+    ${summaryCard('DESPESAS','var(--red)',fmtBRL(despesasExibir),'cartão (em aberto)')}
     ${summaryCard('RECORRENTES','var(--orange)',fmtBRL(totalRecorrentes),'compromisso fixo')}
     ${summaryCard('MAIOR GASTO','var(--yellow)',
       maiorGasto ? fmtBRL(maiorGasto.valor) : '—',

@@ -840,3 +840,110 @@ function formatarMarkdownRelatorio(txt) {
     .replace(/\n{2,}/g, '<br><br>')
     .replace(/\n/g, '<br>');
 }
+
+/* ============================================================
+   EM ABERTO — GastosCartao read-only
+   ============================================================ */
+let _lancTab = 'aberto';
+let _gcMesFiltro = null;
+
+function _gcMesStr(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function switchLancTab(tab) {
+  _lancTab = tab;
+  const pAberto = document.getElementById('pane-aberto');
+  const pHist   = document.getElementById('pane-hist');
+  const bAberto = document.getElementById('stab-aberto');
+  const bHist   = document.getElementById('stab-hist');
+  if (!pAberto) return;
+  pAberto.style.display = tab === 'aberto' ? '' : 'none';
+  pHist.style.display   = tab === 'hist'   ? '' : 'none';
+  if (bAberto) {
+    bAberto.style.borderBottom = tab === 'aberto' ? '2px solid var(--blue)' : '2px solid transparent';
+    bAberto.style.color        = tab === 'aberto' ? 'var(--text)' : 'var(--text3)';
+    bAberto.style.fontWeight   = tab === 'aberto' ? '600' : '400';
+    bHist.style.borderBottom   = tab === 'hist'   ? '2px solid var(--blue)' : '2px solid transparent';
+    bHist.style.color          = tab === 'hist'   ? 'var(--text)' : 'var(--text3)';
+    bHist.style.fontWeight     = tab === 'hist'   ? '600' : '400';
+  }
+  if (tab === 'aberto') renderEmAberto();
+}
+
+function renderEmAberto() {
+  const el = document.getElementById('pane-aberto');
+  if (!el) return;
+  const rows = S.gastosCartao || [];
+
+  if (!rows.length) {
+    el.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text3)">
+      <div style="font-size:36px;margin-bottom:12px">📭</div>
+      <div>Nenhuma transação do GastosCartao carregada.</div>
+    </div>`;
+    return;
+  }
+
+  const meses = [...new Set(rows.map(r => _gcMesStr(r.date)).filter(Boolean))].sort().reverse();
+  if (!_gcMesFiltro || !meses.includes(_gcMesFiltro)) _gcMesFiltro = meses[0];
+
+  const filtradas = rows
+    .filter(r => _gcMesStr(r.date) === _gcMesFiltro)
+    .sort((a, b) => b.date - a.date);
+
+  const total = filtradas.reduce((s, r) => s + r.valor, 0);
+
+  const opts = meses.map(m => {
+    const [y, mo] = m.split('-');
+    const label = new Date(+y, +mo - 1, 1)
+      .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    return `<option value="${m}" ${m === _gcMesFiltro ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+
+  const linhas = filtradas.map(r => {
+    const d = r.date instanceof Date ? r.date : new Date(r.date);
+    const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const { cat } = categorizar(r.descricao);
+    const conta = r.cartao === '2812' ? 'itau-2812'
+                : r.cartao === '4141' ? 'itau-4141' : r.cartao;
+    return `
+    <div style="display:flex;align-items:center;gap:12px;
+      padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div style="min-width:38px;text-align:center">
+        <div style="font-size:13px;font-weight:600">${dateStr}</div>
+        <div style="font-size:10px;color:var(--text3)">${r.timeStr}</div>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:500;white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis">${r.descricao}</div>
+        <div style="font-size:11px;color:var(--text3)">${cat || 'Outros'} · ${conta}</div>
+      </div>
+      <div class="mono" style="font-size:14px;color:var(--red);
+        font-weight:600;flex-shrink:0">${fmtBRL(r.valor)}</div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:16px;gap:12px">
+      <select onchange="_gcMesFiltro=this.value;renderEmAberto()"
+        style="background:var(--card);border:1px solid var(--border);
+        color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px">
+        ${opts}
+      </select>
+      <div>
+        <span style="font-size:12px;color:var(--text3);margin-right:8px">
+          ${filtradas.length} transações</span>
+        <span class="mono" style="font-size:18px;color:var(--red);font-weight:700">
+          ${fmtBRL(total)}</span>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${linhas || '<div style="padding:32px;text-align:center;color:var(--text3)">Nenhuma transação neste mês</div>'}
+    </div>
+    <div style="text-align:center;margin-top:10px;font-size:11px;color:var(--text3)">
+      Fonte: GastosCartao.xlsx · somente leitura
+    </div>`;
+}

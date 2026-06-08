@@ -109,6 +109,7 @@ const S = {
   charts:              {},
   gastosCartaoFileId:  localStorage.getItem('rfm_gastoscartao_id') || null,
   gastosCartaoAnoBase: parseInt(localStorage.getItem('rfm_gastoscartao_anobase')) || (new Date().getFullYear() - 3),
+  gastosCartao:        [],
   workbookSessionId:   null,
   patrimonio:          [],
   recorrentes:         [],
