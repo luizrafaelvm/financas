@@ -179,7 +179,10 @@
     <div class="section" id="sec-lancamentos">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div class="section-title" style="margin:0">📋 Lançamentos</div>
-        <button class="btn btn-primary btn-sm" onclick="openModal('lancamento')">+ Novo</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" onclick="exportarRelatorioPDF(S.mesAtual)" title="Exportar PDF do mês">⬇ PDF</button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('lancamento')">+ Novo</button>
+        </div>
       </div>
       <div class="filters-row">
         <input class="filter-input" id="search-input" placeholder="🔍 Buscar por descrição..." oninput="S.paginaLancamentos=1;clearTimeout(window._st);window._st=setTimeout(renderLancamentos,280)">
@@ -209,6 +212,7 @@
                 <th>Conta</th>
                 <th>Origem</th>
                 <th style="text-align:right">Valor</th>
+                <th style="text-align:center;width:50px">NF</th>
               </tr>
             </thead>
             <tbody id="lancamentos-body"></tbody>
@@ -220,7 +224,10 @@
 
     <!-- ===== ANÁLISE ===== -->
     <div class="section" id="sec-analise">
-      <div class="section-title">📊 Análise por Categoria</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div class="section-title" style="margin:0">📊 Análise por Categoria</div>
+        <button class="btn btn-sm" onclick="exportarRelatorioPDF(S.mesAtual)" title="Exportar PDF do mês">⬇ PDF</button>
+      </div>
       <div id="analise-categorias"></div>
     </div>
 
@@ -747,6 +754,7 @@
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <!-- Módulos da aplicação -->
 <script src="js/config.js"></script>

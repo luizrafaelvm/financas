@@ -199,6 +199,19 @@ function exibirResultadoNF(nf) {
       ${alertaDivergencia}
       <div style="font-size:12px;color:var(--text2);margin-top:8px">Pagamento: ${r.forma_pagamento}</div>
       <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="usarDadosNF(${nf.id})">✓ Usar estes dados</button>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">💾 Vincular ao lançamento:</div>
+        <input type="text" class="form-input" id="nf-search-${nf.id}"
+          placeholder="Buscar lançamento por descrição..."
+          style="font-size:12px;margin-bottom:6px"
+          oninput="filtrarSugestoesNF(${nf.id}, this.value)">
+        <div id="nf-sugestoes-${nf.id}" style="max-height:150px;overflow-y:auto"></div>
+        <input type="hidden" id="nf-lancamento-id-${nf.id}" value="">
+        <button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%"
+          onclick="vincularNFaLancamentoId(document.getElementById('nf-lancamento-id-${nf.id}').value, ${nf.id})">
+          🔗 Vincular ao lançamento
+        </button>
+      </div>
     </div>`;
 }
 
@@ -684,6 +697,59 @@ async function salvarPatrimonio(itens) {
     valor: r[3], fonte: r[4], ano: r[5]
   }));
   showToast(`✓ ${rows.length} itens patrimoniais salvos`, 'verde');
+}
+
+/* ============================================================
+   NF → VINCULAR A LANÇAMENTO (localStorage nf_lancamentos)
+   ============================================================ */
+function filtrarSugestoesNF(nfId, texto) {
+  const container = document.getElementById(`nf-sugestoes-${nfId}`);
+  if (!container) return;
+  if (!texto.trim()) { container.innerHTML = ''; return; }
+  const txs = S.transactions
+    .filter(t => (t.descricao||'').toLowerCase().includes(texto.toLowerCase()))
+    .slice(0, 8);
+  if (!txs.length) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:4px 0">Nenhum lançamento encontrado</div>';
+    return;
+  }
+  container.innerHTML = txs.map(t => `
+    <div style="padding:6px 8px;cursor:pointer;border-radius:6px;font-size:12px;
+      background:var(--card);border:1px solid var(--border);margin-bottom:3px;
+      display:flex;justify-content:space-between;align-items:center"
+      onclick="selecionarLancamentoNF(${nfId}, ${t.id})">
+      <span>${fmtData(t.data)} · ${(t.descricao||'').substring(0,28)}</span>
+      <span style="color:var(--red);font-family:'DM Mono',monospace;font-size:11px">${fmtBRL(t.valor)}</span>
+    </div>`).join('');
+}
+
+function selecionarLancamentoNF(nfId, txId) {
+  const tx = S.transactions.find(t => String(t.id) === String(txId));
+  if (!tx) return;
+  document.getElementById(`nf-lancamento-id-${nfId}`).value = txId;
+  document.getElementById(`nf-search-${nfId}`).value =
+    `${fmtData(tx.data)} · ${(tx.descricao||'').substring(0,28)}`;
+  document.getElementById(`nf-sugestoes-${nfId}`).innerHTML = '';
+}
+
+function vincularNFaLancamentoId(lancamentoId, nfId) {
+  if (!lancamentoId) { showToast('Selecione um lançamento', 'amarelo'); return; }
+  const nf = window.nfBuffer.find(n => n.id === nfId);
+  if (!nf?.resultado) { showToast('Analise a NF antes de vincular', 'amarelo'); return; }
+  const r = nf.resultado;
+  const nfData = {
+    items: r.itens || [],
+    total: r.valor_total || 0,
+    estabelecimento: r.estabelecimento || '',
+    data: r.data || '',
+    dataAnalise: new Date().toISOString()
+  };
+  const mapa = JSON.parse(localStorage.getItem('nf_lancamentos') || '{}');
+  mapa[lancamentoId] = nfData;
+  localStorage.setItem('nf_lancamentos', JSON.stringify(mapa));
+  showToast('NF vinculada com sucesso!', 'verde');
+  const btn = document.querySelector(`[onclick*="vincularNFaLancamentoId"][onclick*="${nfId}"]`);
+  if (btn) btn.textContent = '✓ Vinculado!';
 }
 
 async function processPatrimonioFile(file) {

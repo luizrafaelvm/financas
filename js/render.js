@@ -418,6 +418,7 @@ function renderLancamentos() {
     'csv-import':'📄 CSV','ofx-import':'📄 OFX',
     'sms-automatico':'📱 SMS'
   };
+  const nfMapa = JSON.parse(localStorage.getItem('nf_lancamentos') || '{}');
 
   body.innerHTML = txsPag.map(t => {
     const cor  = t.tipo==='receita'?'var(--green)':'var(--red)';
@@ -428,6 +429,8 @@ function renderLancamentos() {
     const sub  = t.subcategoria && t.subcategoria !== 'Não categorizado'
       ? `<div style="font-size:11px;color:var(--text3)">${t.subcategoria}</div>`:'';
     const nfIcon = t.observacao && t.observacao.startsWith('NF:') ? ` 🧾` : '';
+    const nfBadge = nfMapa[t.id]
+      ? `<span class="nf-badge" onclick="verNF('${t.id}')">📄 NF</span>` : '';
     return `<tr>
       <td style="color:var(--text2);font-size:12px;white-space:nowrap">
         ${fmtData(t.data)}</td>
@@ -445,6 +448,7 @@ function renderLancamentos() {
       <td style="text-align:right;font-family:'DM Mono',monospace;
         color:${cor};font-size:14px;white-space:nowrap">
         ${sinal}${fmtBRL(t.valor)}</td>
+      <td style="text-align:center">${nfBadge}</td>
     </tr>`;
   }).join('');
 

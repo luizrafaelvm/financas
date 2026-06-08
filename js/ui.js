@@ -610,6 +610,221 @@ function _copiarFallback() {
   showToast('📋 Copiado!','verde');
 }
 
+/* === VER NF VINCULADA === */
+function verNF(lancamentoId) {
+  const mapa = JSON.parse(localStorage.getItem('nf_lancamentos') || '{}');
+  const nfData = mapa[String(lancamentoId)];
+  if (!nfData) { showToast('NF não encontrada', 'amarelo'); return; }
+
+  const dataAnalise = nfData.dataAnalise
+    ? new Date(nfData.dataAnalise).toLocaleDateString('pt-BR') : '—';
+
+  const linhas = (nfData.items || []).map(it => `
+    <tr>
+      <td style="font-size:12px">${escHtml(it.descricao || '')}</td>
+      <td style="text-align:center;font-size:12px">${it.quantidade || 1}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">${fmtBRL(it.valor_unitario || 0)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">${fmtBRL(it.valor_total_item || it.total || 0)}</td>
+    </tr>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modal-ver-nf';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:560px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="modal-title" style="margin:0">📄 Nota Fiscal</div>
+        <div style="font-size:12px;color:var(--text2)">${escHtml(nfData.estabelecimento || '')} · ${dataAnalise}</div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Descrição</th>
+              <th style="text-align:center">Qtd</th>
+              <th style="text-align:right">Valor Unit.</th>
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${linhas || '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px">Sem itens registrados</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;text-align:right;font-family:'DM Mono',monospace;font-size:16px;font-weight:600;color:var(--green)">
+        Total: ${fmtBRL(nfData.total || 0)}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="document.getElementById('modal-ver-nf').remove()">✕ Fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+/* === EXPORTAR PDF MENSAL === */
+function exportarRelatorioPDF(mesAno) {
+  if (typeof window.jspdf === 'undefined') {
+    showToast('jsPDF não carregado', 'amarelo'); return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const NOMES_MES = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const [ano, mes] = (mesAno || S.mesAtual).split('-');
+  const nomeMes = `${NOMES_MES[parseInt(mes)-1]} ${ano}`;
+
+  const { receitas, despesas, saldo, renda, comprometimento } = resumoMes(mesAno);
+  const cats = gastosPorCategoria(mesAno);
+
+  const agora = new Date();
+  const dtStr = `${String(agora.getDate()).padStart(2,'0')}/${String(agora.getMonth()+1).padStart(2,'0')}/${agora.getFullYear()} ${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`;
+
+  const addRodape = () => {
+    const total = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= total; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, 285, 195, 285);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Gerado em ${dtStr} - Dashboard Financeiro Rafael Maluf`, 15, 290);
+    }
+  };
+
+  /* --- PÁGINA 1: Resumo executivo --- */
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(10, 132, 255);
+  doc.text('DASHBOARD FINANCEIRO - Rafael Maluf', 15, 20);
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 51, 51);
+  doc.text(nomeMes.toUpperCase(), 15, 30);
+
+  const boxes = [
+    { x: 15,  label: 'RECEITAS', value: fmtBRL(receitas), r: 45, g: 138, b: 78  },
+    { x: 75,  label: 'DESPESAS', value: fmtBRL(despesas), r: 192, g: 57, b: 43  },
+    { x: 135, label: 'SALDO',    value: fmtBRL(saldo),
+      r: saldo >= 0 ? 45 : 192, g: saldo >= 0 ? 138 : 57, b: saldo >= 0 ? 78 : 43 }
+  ];
+  boxes.forEach(box => {
+    doc.setDrawColor(180, 180, 180);
+    doc.rect(box.x, 40, 55, 28, 'D');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 100, 100);
+    doc.text(box.label, box.x + 27.5, 51, { align: 'center' });
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(box.r, box.g, box.b);
+    doc.text(box.value, box.x + 27.5, 62, { align: 'center' });
+  });
+
+  if (renda > 0) {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 51, 51);
+    doc.text(`Comprometimento de renda: ${comprometimento.toFixed(1)}%`, 15, 85);
+  }
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(51, 51, 51);
+  doc.text('TOP 5 CATEGORIAS DO MES', 15, 100);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  let y = 108;
+  cats.slice(0, 5).forEach(([cat, val]) => {
+    const pctRenda = renda > 0 ? ` - ${(val / renda * 100).toFixed(1)}%` : '';
+    doc.text(`- ${cat} - ${fmtBRL(val)}${pctRenda}`, 20, y);
+    y += 7;
+  });
+
+  /* --- PÁGINA 2+: Lançamentos --- */
+  doc.addPage();
+
+  const txs = txsMes(mesAno)
+    .slice()
+    .sort((a, b) => {
+      const da = a.data instanceof Date ? a.data : new Date(a.data);
+      const db = b.data instanceof Date ? b.data : new Date(b.data);
+      return da - db;
+    });
+
+  const COL = { dataX: 15, descX: 41, catX: 122, valorX: 195 };
+
+  const addHeaderTabela = (pageY) => {
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(80, 80, 80);
+    doc.text('Data',      COL.dataX,  pageY);
+    doc.text('Descricao', COL.descX,  pageY);
+    doc.text('Categoria', COL.catX,   pageY);
+    doc.text('Valor',     COL.valorX, pageY, { align: 'right' });
+    doc.setDrawColor(180, 180, 180);
+    doc.line(15, pageY + 2, 195, pageY + 2);
+    return pageY + 7;
+  };
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(51, 51, 51);
+  doc.text(`LANCAMENTOS - ${nomeMes.toUpperCase()}`, 15, 14);
+
+  let ty = addHeaderTabela(20);
+  let count = 0;
+
+  txs.forEach((t) => {
+    if (count > 0 && count % 40 === 0) {
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(51, 51, 51);
+      doc.text(`LANCAMENTOS - ${nomeMes.toUpperCase()} (cont.)`, 15, 12);
+      ty = addHeaderTabela(18);
+    }
+
+    if (count % 2 === 0) {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(15, ty - 4, 180, 6, 'F');
+    }
+
+    const dataStr = fmtData(t.data);
+    const descStr = (t.descricao || '').substring(0, 38);
+    const catStr  = (t.categoria  || '').substring(0, 18);
+    const sinal   = t.tipo === 'receita' ? '+' : '-';
+    const valorStr = `${sinal}${fmtBRL(t.valor)}`;
+    const cor = t.tipo === 'receita' ? [45, 138, 78] : [192, 57, 43];
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 51, 51);
+    doc.text(dataStr, COL.dataX, ty);
+    doc.text(descStr, COL.descX, ty);
+    doc.text(catStr,  COL.catX,  ty);
+    doc.setTextColor(...cor);
+    doc.text(valorStr, COL.valorX, ty, { align: 'right' });
+
+    ty += 6;
+    count++;
+  });
+
+  ty += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(15, ty, 195, ty);
+  ty += 6;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Total de lancamentos: ${txs.length}`, 15, ty);
+
+  addRodape();
+  doc.save(`financas-${mesAno}.pdf`);
+  showToast('PDF gerado com sucesso!', 'verde');
+}
+
 function formatarMarkdownRelatorio(txt) {
   return txt
     .replace(/^## (.+)$/gm,
