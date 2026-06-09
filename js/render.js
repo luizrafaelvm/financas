@@ -83,12 +83,28 @@ function renderAll() {
 }
 
 /* ============================================================
+   HOME — helper centralizado GastosCartao
+   ============================================================ */
+function gcResumoMes(mesAno) {
+  const rows = (S.gastosCartao || []).filter(r => _gcMesStr(r.date) === mesAno);
+  const total = rows.reduce((s, r) => s + r.valor, 0);
+  const maior = rows.length
+    ? rows.reduce((m, r) => r.valor > m.valor ? r : m, rows[0])
+    : null;
+  const top5 = [...rows].sort((a, b) => b.valor - a.valor).slice(0, 5);
+  return { total, maior, top5, count: rows.length };
+}
+
+/* ============================================================
    HOME
    ============================================================ */
 function renderHome() {
   const mes = S.mesAtual;
-  const { receitas, despesas, saldo, renda, comprometimento, maiorGasto }
-    = resumoMes(mes);
+  const { receitas, renda, maiorGasto } = resumoMes(mes);
+  const _gc = gcResumoMes(mes);
+  const despesas = _gc.total;
+  const saldo = receitas - despesas;
+  const comprometimento = renda > 0 ? (despesas / renda * 100) : 0;
 
   const mesaMudou = S._lastRenderedMes !== mes;
   if (!mesaMudou && S.charts.donut) {
@@ -131,9 +147,8 @@ function renderHome() {
       `${comprometimento.toFixed(1)}% da renda estimada comprometida`;
   }
   if (choqueBadges) {
-    const txs  = txsMes(mes);
-    const nTxs = txs.filter(t=>t.tipo==='despesa').length;
-    const nCats= new Set(txs.filter(t=>t.tipo==='despesa').map(t=>t.categoria)).size;
+    const nTxs = _gc.count;
+    const nCats = new Set(_gc.top5.map(r => categorizar(r.descricao).cat)).size;
     choqueBadges.innerHTML = `
       <span class="badge ${comprometimento>=90?'badge-red':
         comprometimento>=70?'badge-yellow':'badge-green'}">
@@ -147,26 +162,25 @@ function renderHome() {
     .filter(r => r.ativo)
     .reduce((s,r) => s + (r.variavel ? r.ultimoValor || r.valor : r.valor), 0);
 
-  const _gcHoje = (S.gastosCartao || []).filter(r => _gcMesStr(r.date) === mes);
-  const totalGC  = _gcHoje.reduce((s, r) => s + r.valor, 0);
-  const despesasExibir = totalGC > 0 ? totalGC : despesas;
-
   document.getElementById('summary-grid').innerHTML = `
     ${summaryCard('RECEITAS','var(--green)',fmtBRL(receitas),'do mês')}
-    ${summaryCard('DESPESAS','var(--red)',fmtBRL(despesasExibir),'cartão (em aberto)')}
+    ${summaryCard('DESPESAS','var(--red)',fmtBRL(despesas),'cartão (em aberto)')}
     ${summaryCard('RECORRENTES','var(--orange)',fmtBRL(totalRecorrentes),'compromisso fixo')}
     ${summaryCard('MAIOR GASTO','var(--yellow)',
       maiorGasto ? fmtBRL(maiorGasto.valor) : '—',
       maiorGasto ? maiorGasto.descricao.substring(0,22) : 'nenhum')}`;
 
   // ---- TOP 5 GASTOS ----
-  const top5   = txsMes(mes).filter(t=>t.tipo==='despesa')
-    .sort((a,b)=>b.valor-a.valor).slice(0,5);
+  const top5   = _gc.top5;
   const top5El = document.getElementById('home-top5');
   if (top5El) {
     top5El.innerHTML = top5.length === 0
       ? '<div style="color:var(--text3);font-size:13px">Sem gastos registrados</div>'
-      : top5.map((t,i) => `
+      : top5.map((r,i) => {
+          const cat = categorizar(r.descricao).cat;
+          const dateStr = (r.date instanceof Date ? r.date : new Date(r.date))
+            .toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric'});
+          return `
         <div style="display:flex;align-items:center;gap:12px;
           padding:10px 0;border-bottom:1px solid var(--border)">
           <div style="width:24px;height:24px;border-radius:50%;
@@ -174,17 +188,18 @@ function renderHome() {
             justify-content:center;font-size:11px;font-weight:600;
             flex-shrink:0">${i+1}</div>
           <span style="width:10px;height:10px;border-radius:50%;
-            background:${CORES[t.categoria]||'#8E8E93'};flex-shrink:0"></span>
+            background:${CORES[cat]||'#8E8E93'};flex-shrink:0"></span>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;white-space:nowrap;overflow:hidden;
-              text-overflow:ellipsis">${t.descricao}</div>
+              text-overflow:ellipsis">${r.descricao}</div>
             <div style="font-size:11px;color:var(--text3)">
-              ${t.categoria} · ${fmtData(t.data)}</div>
+              ${cat} · ${dateStr}</div>
           </div>
           <div style="font-family:'DM Mono',monospace;color:var(--red);
             font-size:14px;white-space:nowrap;font-weight:500">
-            ${fmtBRL(t.valor)}</div>
-        </div>`).join('');
+            ${fmtBRL(r.valor)}</div>
+        </div>`;
+        }).join('');
   }
 
   // ---- COMPROMETIMENTO RECORRENTES ----
@@ -226,11 +241,9 @@ function renderHome() {
   }
 
   // ---- CARTÕES ----
-  const txsItau   = txsMes(mes).filter(t=>t.conta==='itau-cartao');
   const txsDiners = txsMes(mes).filter(t=>
     t.conta&&t.conta.toLowerCase().includes('diners'));
-  const totalItau   = txsItau.filter(t=>t.tipo==='despesa')
-    .reduce((s,t)=>s+t.valor,0);
+  const totalItau = _gc.total;
   const totalDiners = txsDiners.filter(t=>t.tipo==='despesa')
     .reduce((s,t)=>s+t.valor,0);
 
