@@ -91,8 +91,39 @@ function gcResumoMes(mesAno) {
   const maior = rows.length
     ? rows.reduce((m, r) => r.valor > m.valor ? r : m, rows[0])
     : null;
-  const top5 = [...rows].sort((a, b) => b.valor - a.valor).slice(0, 5);
-  return { total, maior, top5, count: rows.length };
+  const sorted = [...rows].sort((a, b) => b.valor - a.valor);
+
+  const porCategoria = {};
+  rows.forEach(r => {
+    const cat = r.catOverride || _gcCategoria(r.descricao);
+    porCategoria[cat] = (porCategoria[cat] || 0) + r.valor;
+  });
+
+  return {
+    total, maior, count: rows.length,
+    top5:  sorted.slice(0, 5),
+    top10: sorted.slice(0, 10),
+    porCategoria
+  };
+}
+
+function _gcCategoria(descricao) {
+  const c = categorizar(descricao);
+  if (c && c.cat !== 'Outros') return c.cat;
+  const d = (descricao || '').toUpperCase();
+  if (/FARMAC|DROGASIL|DROGA|ULTRAFARMA|PANVEL/.test(d))     return 'Saúde';
+  if (/FINANC|CAIXA HABIT|PRESTACAO IMOVEL/.test(d))         return 'Moradia';
+  if (/PENSAO|PENSÃO|ESCOLA|COLEGIO/.test(d))                return 'Filhas';
+  if (/CARREFOUR|ZAFFARI|MERCADO|HIPER|ATACADAO/.test(d))    return 'Alimentação';
+  if (/IFOOD|RAPPI|JAMES|UBER EATS/.test(d))                 return 'Alimentação';
+  if (/RESTAUR|LANCHE|SUSHI|PIZZA|BURGER|CHURRASCO/.test(d)) return 'Alimentação';
+  if (/NETFLIX|SPOTIFY|DISNEY|HBO|AMAZON|YOUTUBE/.test(d))   return 'Lazer';
+  if (/TEATRO|CINEMA|SHOW|INGRESSO|TICKETMASTER|ESPIRITA/.test(d)) return 'Lazer';
+  if (/BAR |BALADA|CERVEJ|CHOPP/.test(d))                    return 'Lazer';
+  if (/UBER|99APP|TAXI|CABIFY/.test(d))                      return 'Transporte';
+  if (/ANTHROPIC|MICROSOFT|ADOBE|GOOGLE ONE|ICLOUD/.test(d)) return 'Assinaturas';
+  if (/ZARA|RENNER|FARM|AREZZO|HERING|RIACHUELO/.test(d))    return 'Vestuário';
+  return 'Outros';
 }
 
 /* ============================================================
@@ -545,83 +576,155 @@ function renderAnalise() {
 }
 
 /* ============================================================
+   DIAGNÓSTICO — helpers
+   ============================================================ */
+const _CAT_ESSENCIAIS = ['Saúde', 'Moradia', 'Filhas', 'Financiamentos'];
+const _CAT_SUPERFLUAS = ['Lazer', 'Vestuário', 'Assinaturas'];
+
+function _calcScore(resumo) {
+  const renda = parseFloat(S.config?.renda_mensal_estimada) || 0;
+  if (!renda) return {
+    score: 50, cor: 'var(--yellow)', emoji: '🟡',
+    msg: 'Configure sua renda estimada em Configurações para calcular o score.'
+  };
+  const pct = resumo.total / renda;
+  let score = 100;
+  if      (pct >= 1.0) score -= 50;
+  else if (pct >= 0.9) score -= 35;
+  else if (pct >= 0.8) score -= 20;
+  else if (pct >= 0.7) score -= 12;
+  else if (pct >= 0.6) score -= 5;
+
+  const totalSup = _CAT_SUPERFLUAS
+    .reduce((s, c) => s + (resumo.porCategoria[c] || 0), 0);
+  const pctSup = totalSup / renda;
+  if      (pctSup >= 0.3) score -= 20;
+  else if (pctSup >= 0.2) score -= 12;
+  else if (pctSup >= 0.1) score -= 6;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const cor   = score >= 70 ? 'var(--green)'
+              : score >= 45 ? 'var(--yellow)' : 'var(--red)';
+  const emoji = score >= 70 ? '🟢' : score >= 45 ? '🟡' : '🔴';
+  const msg   = score >= 70
+    ? 'Boa saúde financeira. Continue assim.'
+    : score >= 45
+    ? 'Atenção: renda comprometida acima de 70%.'
+    : 'Situação crítica: gastos próximos ou acima da renda.';
+  return { score, cor, emoji, msg };
+}
+
+function _identificarSuperfluas(resumo) {
+  return _CAT_SUPERFLUAS
+    .filter(c => (resumo.porCategoria[c] || 0) > 5)
+    .map(c => {
+      const total  = resumo.porCategoria[c];
+      const renda  = parseFloat(S.config?.renda_mensal_estimada) || 0;
+      const pctStr = renda > 0
+        ? ` (${(total / renda * 100).toFixed(1)}% da renda)` : '';
+      return {
+        cat: c, total,
+        sugestao: `Você gastou ${fmtBRL(total)} em ${c}${pctStr}.` +
+          ` Reduzir 50% economizaria ${fmtBRL(total * 0.5)}/mês.`
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
+/* ============================================================
    DIAGNÓSTICO
    ============================================================ */
 function renderDiagnostico() {
-  const mes = S.mesAtual;
-  const { receitas, despesas, saldo, renda, comprometimento } = resumoMes(mes);
-  const txs = txsMes(mes);
+  const mes    = S.mesAtual || getMesAtual();
+  const resumo = gcResumoMes(mes);
+  const sc     = _calcScore(resumo);
+  const sups   = _identificarSuperfluas(resumo);
 
-  // Score 0-100
-  let score = 100;
-  if (comprometimento > 80) score -= 40;
-  else if (comprometimento > 60) score -= 20;
-  if (saldo < 0) score -= 30;
-  const txsSuperf = txs.filter(t=>SUPERFLUOUS.includes(t.categoria)&&t.tipo==='despesa');
-  const totalSuperf = txsSuperf.reduce((s,t)=>s+t.valor,0);
-  if (totalSuperf/renda > 0.2) score -= 15;
-  score = Math.max(0, Math.min(100, score));
-
-  let emoji, cls, titulo, desc;
-  if (score >= 70) {
-    emoji='🟢'; cls='verde'; titulo='Saúde financeira boa';
-    desc=`Você manteve ${comprometimento.toFixed(0)}% da renda comprometida. Continue assim.`;
-  } else if (score >= 40) {
-    emoji='🟡'; cls='amarelo'; titulo='Atenção nos gastos';
-    desc=`${comprometimento.toFixed(0)}% da renda comprometida. Há oportunidades de melhoria.`;
-  } else {
-    emoji='🔴'; cls='vermelho'; titulo='Gastos acima do ideal';
-    desc=`${comprometimento.toFixed(0)}% da renda comprometida${saldo<0?' — saldo negativo!':''}.`;
-  }
-
-  document.getElementById('semaforo').textContent = emoji;
-  document.getElementById('semaforo').className = `semaforo ${cls}`;
-  document.getElementById('score-titulo').textContent = `${titulo} · Score ${score}/100`;
-  document.getElementById('score-desc').textContent = desc;
-
-  // Top 10
-  const top10 = txs.filter(t=>t.tipo==='despesa').sort((a,b)=>b.valor-a.valor).slice(0,10);
-  document.getElementById('top-gastos').innerHTML = top10.map((t,i) => `
-    <li class="top-gasto-item">
-      <div class="top-gasto-rank">${i+1}</div>
-      <div>
-        <div class="top-gasto-desc">${t.descricao}</div>
-        <div class="top-gasto-cat">${fmtData(t.data)} · ${t.categoria}</div>
-      </div>
-      <div class="top-gasto-val">${fmtBRL(t.valor)}</div>
-    </li>`).join('');
-
-  // Supérfluos
-  const catsSuperf = {};
-  txsSuperf.forEach(t=>{catsSuperf[t.categoria]=(catsSuperf[t.categoria]||0)+t.valor;});
-  const superEl = document.getElementById('superfluous-list');
-  if (!Object.keys(catsSuperf).length) {
-    superEl.innerHTML = `<div style="color:var(--text3);font-size:13px">Nenhum gasto supérfluo identificado este mês. 👏</div>`;
-  } else {
-    superEl.innerHTML = Object.entries(catsSuperf).map(([c,v])=>`
-      <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-size:14px">${c}</div>
-          <div style="font-size:12px;color:var(--text2)">Reduzir 50% economizaria ${fmtBRL(v*0.5)}/mês</div>
-        </div>
-        <span class="badge badge-red">${fmtBRL(v)}</span>
-      </div>`).join('') +
-      `<div style="margin-top:10px;font-size:13px;color:var(--text2)">Total supérfluo: <strong style="color:var(--red)">${fmtBRL(totalSuperf)}</strong> · ${(totalSuperf/renda*100).toFixed(1)}% da renda</div>`;
-  }
-
-  // Essenciais
-  const txsEss = txs.filter(t=>ESSENCIAIS.includes(t.categoria)&&t.tipo==='despesa');
-  const catEss = {};
-  txsEss.forEach(t=>{catEss[t.categoria]=(catEss[t.categoria]||0)+t.valor;});
-  document.getElementById('essential-list').innerHTML = Object.keys(catEss).length
-    ? Object.entries(catEss).map(([c,v])=>`
-        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div>
-            <div style="font-size:14px">${c} <span style="font-size:11px">🛡️ protegido</span></div>
+  const top10HTML = resumo.top10.length
+    ? resumo.top10.map((r, i) => {
+        const cat = r.catOverride || _gcCategoria(r.descricao);
+        const d   = r.date instanceof Date ? r.date : new Date(r.date);
+        return `<div style="display:flex;align-items:center;gap:10px;
+          padding:9px 0;border-bottom:1px solid var(--border)">
+          <span style="min-width:20px;color:var(--text3);font-size:12px">
+            ${i + 1}.</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;white-space:nowrap;
+              overflow:hidden;text-overflow:ellipsis">${r.descricao}</div>
+            <div style="font-size:11px;color:var(--text3)">
+              ${cat} · ${d.toLocaleDateString('pt-BR',
+                {day:'2-digit', month:'2-digit'})}</div>
           </div>
-          <span class="badge badge-blue">${fmtBRL(v)}</span>
-        </div>`).join('')
-    : `<div style="color:var(--text3);font-size:13px">Nenhum gasto essencial registrado este mês.</div>`;
+          <span class="mono" style="color:var(--red);font-weight:600;
+            flex-shrink:0">${fmtBRL(r.valor)}</span>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--text3);padding:16px 0">Sem dados este mês.</div>';
+
+  const supsHTML = sups.length
+    ? sups.map(s => `
+      <div class="card" style="padding:14px 16px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-weight:600">💸 ${s.cat}</span>
+          <span class="mono" style="color:var(--red)">${fmtBRL(s.total)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--yellow);
+          background:rgba(255,214,10,0.07);border-radius:6px;padding:8px 10px">
+          💡 ${s.sugestao}
+        </div>
+      </div>`).join('')
+    : '<div class="card" style="padding:14px 16px;color:var(--green);font-size:13px">' +
+      '✅ Nenhum gasto supérfluo significativo este mês.</div>';
+
+  const escudosHTML = _CAT_ESSENCIAIS
+    .filter(c => (resumo.porCategoria[c] || 0) > 0)
+    .map(c => `
+      <div style="display:flex;justify-content:space-between;
+        padding:9px 0;border-bottom:1px solid var(--border)">
+        <span>🛡️ ${c}</span>
+        <span class="mono">${fmtBRL(resumo.porCategoria[c])}</span>
+      </div>`).join('');
+
+  const html = `
+    <div style="display:grid;grid-template-columns:170px 1fr;
+      gap:16px;margin-bottom:20px">
+      <div class="card" style="text-align:center;padding:24px 14px">
+        <div style="font-size:11px;color:var(--text3);font-weight:600;
+          margin-bottom:10px;text-transform:uppercase">Saúde Financeira</div>
+        <div style="font-size:58px;font-weight:800;
+          color:${sc.cor};line-height:1">${sc.score}</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">/ 100</div>
+        <div style="font-size:20px;margin-bottom:8px">${sc.emoji}</div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.5">
+          ${sc.msg}</div>
+      </div>
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px">
+          🚨 Top 10 Maiores Gastos</div>
+        ${top10HTML}
+      </div>
+    </div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">
+      💸 Gastos Supérfluos Identificados</div>
+    ${supsHTML}
+    ${escudosHTML ? `
+    <div class="card" style="margin-top:16px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">
+        🛡️ Essenciais Protegidos — Jamais Cortar</div>
+      ${escudosHTML}
+    </div>` : ''}`;
+
+  const secEl = document.getElementById('sec-diagnostico');
+  if (!secEl) return;
+  const tituloEl = secEl.querySelector('.section-title');
+  if (tituloEl) {
+    while (tituloEl.nextSibling) secEl.removeChild(tituloEl.nextSibling);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    secEl.appendChild(wrapper);
+  } else {
+    secEl.innerHTML = html;
+  }
 }
 
 /* ============================================================
@@ -655,6 +758,78 @@ function renderMetas() {
       <button class="meta-edit-btn" style="margin-top:10px" onclick="editMeta('${cat}')">Editar meta →</button>
     </div>`;
   }).join('');
+  renderHistoricoMetas();
+}
+
+function renderHistoricoMetas() {
+  let el = document.getElementById('metas-historico');
+  if (!el) {
+    const grid = document.getElementById('metas-grid');
+    if (!grid) return;
+    el = document.createElement('div');
+    el.id = 'metas-historico';
+    grid.insertAdjacentElement('afterend', el);
+  }
+
+  const metas = Object.entries(S.metas || {}).filter(([, m]) => m.teto > 0);
+  const meses = [...new Set(
+    (S.gastosCartao || []).map(r => _gcMesStr(r.date)).filter(Boolean)
+  )].sort().reverse().slice(0, 3);
+
+  if (!metas.length || !meses.length) {
+    el.innerHTML =
+      '<div style="color:var(--text3);font-size:13px;padding:16px 0">' +
+      'Dados insuficientes para histórico.</div>';
+    return;
+  }
+
+  const resumosPorMes = {};
+  meses.forEach(m => { resumosPorMes[m] = gcResumoMes(m); });
+
+  const headerMeses = meses.map(m => {
+    const [y, mo] = m.split('-');
+    const label = new Date(+y, +mo - 1, 1)
+      .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    return `<th style="text-align:right;padding:8px 12px;font-size:11px;
+      color:var(--text3)">${label}</th>`;
+  }).join('');
+
+  const rows = metas.map(([cat, meta]) => {
+    const cells = meses.map(m => {
+      const gasto = resumosPorMes[m].porCategoria[cat] || 0;
+      const teto  = meta.teto || 0;
+      const pct   = teto > 0 ? (gasto / teto) * 100 : 0;
+      const cor   = pct >= 90 ? 'var(--red)'
+                  : pct >= 70 ? 'var(--yellow)' : 'var(--text)';
+      return `<td style="text-align:right;padding:8px 12px;font-size:12px;
+        color:${cor}" class="mono">${fmtBRL(gasto)}</td>`;
+    }).join('');
+    return `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 12px;font-size:13px">${cat}</td>
+        <td style="padding:8px 12px;font-size:12px;color:var(--text3)"
+          class="mono">${fmtBRL(meta.teto)}</td>
+        ${cells}
+      </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin:20px 0 10px 0">
+      📅 Histórico por Categoria (últimos 3 meses)</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:8px 12px;font-size:11px;
+              color:var(--text3)">Categoria</th>
+            <th style="text-align:right;padding:8px 12px;font-size:11px;
+              color:var(--text3)">Teto</th>
+            ${headerMeses}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 /* ============================================================
