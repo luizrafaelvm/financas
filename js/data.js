@@ -349,7 +349,8 @@ function parseRecorrentes(raw) {
       ativo:           String(r[9] || 'sim').toLowerCase() !== 'nao',
       observacao:      String(r[10] || ''),
       ultimoValor:     parseFloat(r[11]) || 0,
-      ultimoPagamento: r[12] ? String(r[12]) : ''
+      ultimoPagamento: r[12] ? String(r[12]) : '',
+      pagoMeses:       String(r[13] || '').trim()
     });
   }
   return lista;

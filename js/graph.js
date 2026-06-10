@@ -237,7 +237,8 @@ async function salvarRecorrente(rec) {
     'sim',
     rec.observacao || '',
     rec.valor || 0,
-    ''
+    '',
+    rec.pagoMeses || ''
   ];
   await appendRows('Recorrentes', [row]);
   S.recorrentes.push({ ...rec, id, ativo: true });
@@ -252,14 +253,17 @@ async function atualizarRecorrente(id, campos) {
     if (String(raw[i][0]) === String(id)) { rowNum = i + 1; break; }
   }
   if (rowNum < 0) return;
+  const existente = S.recorrentes.find(r => String(r.id) === String(id)) || {};
+  const dados = { ...existente, ...campos };
   await graphFetch(
-    `/me/drive/items/${S.fileId}/workbook/worksheets/Recorrentes/range(address='A${rowNum}:M${rowNum}')`,
+    `/me/drive/items/${S.fileId}/workbook/worksheets/Recorrentes/range(address='A${rowNum}:N${rowNum}')`,
     { method: 'PATCH', body: { values: [[
       id,
-      campos.descricao, campos.categoria, campos.subcategoria,
-      campos.conta, campos.tipo, campos.valor, campos.diaVencimento,
-      campos.variavel?'sim':'nao', campos.ativo?'sim':'nao',
-      campos.observacao, campos.ultimoValor, campos.ultimoPagamento
+      dados.descricao, dados.categoria, dados.subcategoria,
+      dados.conta, dados.tipo, dados.valor, dados.diaVencimento,
+      dados.variavel?'sim':'nao', dados.ativo?'sim':'nao',
+      dados.observacao, dados.ultimoValor, dados.ultimoPagamento,
+      dados.pagoMeses || ''
     ]] } }
   );
   const idx = S.recorrentes.findIndex(r => String(r.id) === String(id));

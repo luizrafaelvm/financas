@@ -391,6 +391,42 @@ function cadastrarSugestao(s) {
     .classList.remove('hidden');
 }
 
+/* === PAGAMENTO MENSAL DE RECORRENTES === */
+function _isPago(rec, mesAno) {
+  return (rec.pagoMeses || '').split(',').includes(mesAno);
+}
+
+async function togglePagamentoRec(recId, mesAno) {
+  const rec = (S.recorrentes || []).find(r => String(r.id) === String(recId));
+  if (!rec) return;
+  const meses = (rec.pagoMeses || '').split(',').filter(Boolean);
+  const idx   = meses.indexOf(mesAno);
+  if (idx >= 0) {
+    meses.splice(idx, 1);
+  } else {
+    meses.push(mesAno);
+  }
+  const novoValor = meses.join(',');
+  rec.pagoMeses = novoValor;
+  try {
+    await atualizarRecorrente(recId, { pagoMeses: novoValor });
+  } catch(e) {
+    console.error('[REC] Erro ao salvar pagoMeses:', e);
+  }
+  renderRecorrentes();
+}
+
+let _recSortDesc = false;
+
+function toggleSortRec() {
+  _recSortDesc = !_recSortDesc;
+  const icon  = document.getElementById('sort-rec-icon');
+  const label = document.getElementById('sort-rec-label');
+  if (icon)  icon.textContent  = _recSortDesc ? '↓' : '↕';
+  if (label) label.textContent = _recSortDesc ? 'Maior → menor' : 'Ordenar por valor';
+  renderRecorrentes();
+}
+
 /* === RELATÓRIO MENSAL === */
 function popularSelectRelMes() {
   const sel = document.getElementById('rel-mes-select');

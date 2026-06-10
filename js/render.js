@@ -667,6 +667,14 @@ function renderRecorrentes() {
   const totalVar  = variaveis.reduce(
     (s,r)=>s+(r.ultimoValor||r.valor),0);
 
+  const mes = getMesAtual();
+  const totalPago = fixos
+    .filter(r => _isPago(r, mes))
+    .reduce((s,r) => s + parseFloat(r.valor||0), 0);
+  const nPago   = fixos.filter(r => _isPago(r, mes)).length;
+  const aPagar  = totalFixo - totalPago;
+  const nAPagar = fixos.length - nPago;
+
   const resumoEl = document.getElementById('rec-resumo');
   if (resumoEl) {
     resumoEl.innerHTML = `
@@ -686,11 +694,18 @@ function renderRecorrentes() {
             ${variaveis.length} itens variáveis</div>
         </div>
         <div>
-          <div class="card-label">TOTAL RECORRENTE</div>
-          <div class="mono" style="font-size:22px;color:var(--yellow)">
-            ${fmtBRL(totalFixo+totalVar)}/mês</div>
+          <div class="card-label">✅ PAGO</div>
+          <div class="mono" style="font-size:22px;color:var(--green)">
+            ${fmtBRL(totalPago)}/mês</div>
           <div style="font-size:11px;color:var(--text3)">
-            antes de qualquer gasto variável</div>
+            ${nPago} itens pagos</div>
+        </div>
+        <div>
+          <div class="card-label">⏳ A PAGAR</div>
+          <div class="mono" style="font-size:22px;color:${aPagar > 0 ? 'var(--yellow)' : 'var(--green)'}">
+            ${fmtBRL(aPagar)}/mês</div>
+          <div style="font-size:11px;color:var(--text3)">
+            ${nAPagar} itens pendentes</div>
         </div>
       </div>`;
   }
@@ -716,8 +731,39 @@ function renderTabRecorrentes(tab, lista) {
     </div>`;
     return;
   }
-  el.innerHTML = `<div class="card" style="padding:0;overflow:hidden">` +
-    lista.map(r => `
+  let itens = [...lista];
+  if (_recSortDesc) {
+    itens.sort((a, b) => parseFloat(b.valor||0) - parseFloat(a.valor||0));
+  }
+  const mes = getMesAtual();
+  const sortBtn = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button id="btn-sort-rec"
+        onclick="toggleSortRec()"
+        style="background:rgba(255,255,255,0.06);border:1px solid var(--border);
+        color:var(--text);border-radius:8px;padding:6px 12px;font-size:12px;
+        cursor:pointer;display:flex;align-items:center;gap:6px">
+        <span id="sort-rec-icon">${_recSortDesc ? '↓' : '↕'}</span>
+        <span id="sort-rec-label">${_recSortDesc ? 'Maior → menor' : 'Ordenar por valor'}</span>
+      </button>
+    </div>`;
+  el.innerHTML = sortBtn + `<div class="card" style="padding:0;overflow:hidden">` +
+    itens.map(r => {
+      const pago = _isPago(r, mes);
+      const btnPago = `
+        <button
+          onclick="togglePagamentoRec('${r.id}', '${mes}')"
+          title="${pago ? 'Clique para desmarcar' : 'Marcar como pago'}"
+          style="
+            width:34px;height:34px;border-radius:8px;border:none;
+            cursor:pointer;font-size:16px;
+            background:${pago ? 'rgba(48,209,88,0.18)' : 'rgba(255,255,255,0.06)'};
+            color:${pago ? 'var(--green)' : 'var(--text3)'};
+            transition:all 0.15s;flex-shrink:0
+          ">
+          ${pago ? '✅' : '○'}
+        </button>`;
+      return `
       <div style="display:flex;align-items:center;gap:12px;
         padding:14px 16px;border-bottom:1px solid var(--border)">
         <span style="width:10px;height:10px;border-radius:50%;
@@ -742,9 +788,13 @@ function renderTabRecorrentes(tab, lista) {
             `<div style="font-size:10px;color:var(--text3)">
               estimado</div>`:''}
         </div>
-        <button class="btn btn-secondary btn-sm"
-          onclick="editarRecorrente('${r.id}')">Editar</button>
-      </div>`).join('') + `</div>`;
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-secondary btn-sm"
+            onclick="editarRecorrente('${r.id}')">Editar</button>
+          ${btnPago}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
 }
 
 function switchTabRec(tab) {
