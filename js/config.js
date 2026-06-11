@@ -121,7 +121,8 @@ const S = {
   _secaoCache:         {},
   _rawDados:           null,
   _mesesDisponiveis:   [],
-  _mesesCarregados:    new Set()
+  _mesesCarregados:    new Set(),
+  regrasCustom:        []
 };
 
 /* ============================================================

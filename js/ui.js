@@ -878,6 +878,144 @@ function formatarMarkdownRelatorio(txt) {
 }
 
 /* ============================================================
+   CONFIGURAÇÕES — EDITOR DE REGRAS DE CATEGORIZAÇÃO
+   ============================================================ */
+function renderizarEditorRegras() {
+  const el = document.getElementById('cfg-regras-editor');
+  if (!el) return;
+
+  const regras = S.regrasCustom || [];
+
+  const linhas = regras.map((r, i) => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 12px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${(r.keywords || []).map((kw, ki) => `
+            <span style="background:rgba(10,132,255,0.15);color:var(--blue);
+              border-radius:6px;padding:3px 8px;font-size:12px;
+              display:inline-flex;align-items:center;gap:4px">
+              ${kw}
+              <span onclick="removerKeyword(${i},${ki})"
+                style="cursor:pointer;color:var(--red);font-weight:700;
+                font-size:14px;line-height:1">×</span>
+            </span>`).join('')}
+          <input id="new-kw-${i}" placeholder="+ keyword"
+            onkeydown="if(event.key==='Enter')adicionarKeyword(${i})"
+            style="background:transparent;border:1px dashed var(--border);
+            border-radius:6px;padding:3px 8px;color:var(--text);
+            font-size:12px;width:100px;outline:none"/>
+        </div>
+      </td>
+      <td style="padding:10px 12px;font-size:13px">${r.categoria}</td>
+      <td style="padding:10px 12px;font-size:12px;
+        color:var(--text3)">${r.subcategoria || '—'}</td>
+      <td style="padding:10px 12px;text-align:center">
+        <button onclick="removerRegra(${i})"
+          style="background:rgba(255,69,58,0.15);color:var(--red);
+          border:none;border-radius:6px;padding:4px 10px;
+          font-size:12px;cursor:pointer">Remover</button>
+      </td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">
+      🏷️ Regras de Categorização Customizadas</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">
+      Estas regras têm prioridade sobre as regras base do sistema.
+      Palavras-chave são buscadas na descrição (maiúsculas/minúsculas
+      ignoradas).</div>
+    ${regras.length ? `
+    <div class="card" style="padding:0;overflow:auto;margin-bottom:16px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:10px 12px;font-size:11px;
+              color:var(--text3)">PALAVRAS-CHAVE</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;
+              color:var(--text3)">CATEGORIA</th>
+            <th style="text-align:left;padding:10px 12px;font-size:11px;
+              color:var(--text3)">SUBCATEGORIA</th>
+            <th style="padding:10px 12px"></th>
+          </tr>
+        </thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>` : `
+    <div style="color:var(--text3);font-size:13px;padding:16px 0;
+      margin-bottom:16px">
+      Nenhuma regra customizada. Adicione abaixo.</div>`}
+
+    <div class="card" style="padding:16px">
+      <div style="font-size:12px;font-weight:600;
+        margin-bottom:10px;color:var(--text3)">NOVA REGRA</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
+        gap:10px;margin-bottom:10px">
+        <input id="nova-regra-kw" placeholder="Palavras-chave (vírgula)"
+          style="background:var(--card);border:1px solid var(--border);
+          border-radius:8px;padding:8px 12px;color:var(--text);
+          font-size:13px;outline:none"/>
+        <input id="nova-regra-cat" placeholder="Categoria"
+          style="background:var(--card);border:1px solid var(--border);
+          border-radius:8px;padding:8px 12px;color:var(--text);
+          font-size:13px;outline:none"/>
+        <input id="nova-regra-sub" placeholder="Subcategoria (opcional)"
+          style="background:var(--card);border:1px solid var(--border);
+          border-radius:8px;padding:8px 12px;color:var(--text);
+          font-size:13px;outline:none"/>
+      </div>
+      <button onclick="adicionarRegra()"
+        style="background:var(--blue);color:#fff;border:none;
+        border-radius:8px;padding:8px 18px;font-size:13px;
+        font-weight:600;cursor:pointer">+ Adicionar regra</button>
+    </div>
+
+    <button onclick="salvarTodasRegras()"
+      style="margin-top:16px;background:var(--green);color:#000;
+      border:none;border-radius:10px;padding:10px 24px;font-size:14px;
+      font-weight:700;cursor:pointer;width:100%">
+      💾 Salvar todas as regras no OneDrive</button>`;
+}
+
+function adicionarKeyword(regraIdx) {
+  const inp = document.getElementById(`new-kw-${regraIdx}`);
+  if (!inp || !inp.value.trim()) return;
+  S.regrasCustom[regraIdx].keywords.push(inp.value.trim().toUpperCase());
+  inp.value = '';
+  renderizarEditorRegras();
+}
+
+function removerKeyword(regraIdx, kwIdx) {
+  S.regrasCustom[regraIdx].keywords.splice(kwIdx, 1);
+  renderizarEditorRegras();
+}
+
+function removerRegra(idx) {
+  S.regrasCustom.splice(idx, 1);
+  renderizarEditorRegras();
+}
+
+function adicionarRegra() {
+  const kw  = document.getElementById('nova-regra-kw')?.value.trim();
+  const cat = document.getElementById('nova-regra-cat')?.value.trim();
+  const sub = document.getElementById('nova-regra-sub')?.value.trim();
+  if (!kw || !cat) {
+    showToast('Informe ao menos uma palavra-chave e a categoria.');
+    return;
+  }
+  if (!S.regrasCustom) S.regrasCustom = [];
+  S.regrasCustom.push({
+    keywords:     kw.split(',').map(k => k.trim().toUpperCase()).filter(Boolean),
+    categoria:    cat,
+    subcategoria: sub || ''
+  });
+  renderizarEditorRegras();
+}
+
+async function salvarTodasRegras() {
+  await salvarRegrasCustom(S.regrasCustom || []);
+}
+
+/* ============================================================
    EM ABERTO — GastosCartao read-only
    ============================================================ */
 let _lancTab = 'aberto';

@@ -134,6 +134,10 @@ function mesAnoLabel(mesAno) {
 
 function categorizar(desc) {
   const u = String(desc||'').toUpperCase();
+  for (const r of (S.regrasCustom || [])) {
+    if ((r.keywords || []).some(k => u.includes(k.toUpperCase())))
+      return { cat: r.categoria, sub: r.subcategoria || '' };
+  }
   for (const r of REGRAS) {
     if (r.kw.some(k => u.includes(k))) return { cat: r.cat, sub: r.sub };
   }

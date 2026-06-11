@@ -183,6 +183,45 @@ async function updateCategorizacao(rowIndex, campos) {
   );
 }
 
+/* ---- Carregar regras customizadas do Excel ---- */
+async function carregarRegrasCustom() {
+  try {
+    const json = await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(SHEET_CFG)}/usedRange`
+    );
+    const rows = json?.values || [];
+    const linha = rows.find(r => String(r[0]).trim() === 'regras_categorizacao');
+    if (!linha || !linha[1]) return [];
+    return JSON.parse(linha[1]);
+  } catch(e) {
+    console.warn('[CFG] regras customizadas não encontradas:', e.message);
+    return [];
+  }
+}
+
+/* ---- Salvar regras customizadas no Excel ---- */
+async function salvarRegrasCustom(regras) {
+  try {
+    const json = await graphFetch(
+      `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(SHEET_CFG)}/usedRange`
+    );
+    const rows = json?.values || [];
+    const idx  = rows.findIndex(r => String(r[0]).trim() === 'regras_categorizacao');
+    const valor = JSON.stringify(regras);
+    if (idx >= 0) {
+      await graphFetch(
+        `/me/drive/items/${S.fileId}/workbook/worksheets/${encodeURIComponent(SHEET_CFG)}/range(address='B${idx + 1}')`,
+        { method: 'PATCH', body: { values: [[valor]] } }
+      );
+    } else {
+      await appendRow(SHEET_CFG, ['regras_categorizacao', valor]);
+    }
+    showToast('Regras salvas com sucesso.', 'verde');
+  } catch(e) {
+    showToast('Erro ao salvar regras: ' + e.message);
+  }
+}
+
 /* ---- Salvar configuração no Excel ---- */
 async function saveConfig(chave, valor) {
   S.config[chave] = valor;

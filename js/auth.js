@@ -124,6 +124,8 @@ async function loadAllData() {
     const rawRecorrentes = await getSheetValues('Recorrentes');
     S.recorrentes = parseRecorrentes(rawRecorrentes);
 
+    S.regrasCustom = await carregarRegrasCustom();
+
     showLoading(false);
     renderAll();
     setTimeout(() => syncGastosCartao().then(() => { renderAll(); renderEmAberto(); }), 2000);

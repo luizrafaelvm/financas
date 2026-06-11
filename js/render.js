@@ -63,7 +63,10 @@ function renderSection(id) {
       popularSelectRelMes?.();
       break;
     }
-    case 'configuracoes': initConfiguracoes?.(); break;
+    case 'configuracoes':
+      initConfiguracoes?.();
+      renderizarEditorRegras?.();
+      break;
   }
 
   if (cacheaveis.includes(id)) {
