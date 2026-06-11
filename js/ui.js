@@ -269,6 +269,100 @@ function exportarJSON() {
   a.click(); URL.revokeObjectURL(url);
 }
 
+/* === EXPORT EXCEL === */
+function exportarExcelMes(mesAno, fonte) {
+  fonte  = fonte  || 'gc';
+  mesAno = mesAno || S.mesAtual || getMesAtual();
+
+  const [ano, mes] = mesAno.split('-');
+  const nomeMes = new Date(+ano, +mes - 1, 1)
+    .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  let linhas = [];
+
+  if (fonte === 'gc') {
+    const rows = (S.gastosCartao || [])
+      .filter(r => _gcMesStr(r.date) === mesAno)
+      .sort((a, b) => a.date - b.date);
+
+    linhas = rows.map(r => {
+      const d   = r.date instanceof Date ? r.date : new Date(r.date);
+      const cat = r.catOverride || _gcCategoria(r.descricao);
+      return [
+        d.toLocaleDateString('pt-BR',
+          { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        r.timeStr || '',
+        r.descricao,
+        cat,
+        r.cartao === '2812' ? 'Itaú *2812'
+          : r.cartao === '4141' ? 'Itaú *4141' : r.cartao,
+        r.valor
+      ];
+    });
+  } else {
+    const rows = txsMes(mesAno)
+      .slice()
+      .sort((a, b) => {
+        const da = a.data instanceof Date ? a.data : new Date(a.data||0);
+        const db = b.data instanceof Date ? b.data : new Date(b.data||0);
+        return da - db;
+      });
+
+    linhas = rows.map(r => [
+      r.data instanceof Date
+        ? r.data.toLocaleDateString('pt-BR')
+        : (r.data || ''),
+      '',
+      r.descricao || '',
+      r.categoria || '',
+      r.conta || '',
+      r.valor || 0
+    ]);
+  }
+
+  if (!linhas.length) {
+    showToast('Nenhum lançamento encontrado para ' + nomeMes + '.');
+    return;
+  }
+
+  const cabecalho = ['Data', 'Hora', 'Descrição', 'Categoria', 'Conta/Cartão', 'Valor (R$)'];
+  const aoa       = [cabecalho, ...linhas];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 8 }, { wch: 40 },
+    { wch: 18 }, { wch: 16 }, { wch: 14 }
+  ];
+
+  for (let i = 1; i < aoa.length; i++) {
+    const cell = XLSX.utils.encode_cell({ r: i, c: 5 });
+    if (ws[cell]) { ws[cell].t = 'n'; ws[cell].z = '#,##0.00'; }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, nomeMes.substring(0, 31));
+
+  const porCat = {};
+  linhas.forEach(l => {
+    const cat = l[3] || 'Outros';
+    porCat[cat] = (porCat[cat] || 0) + (parseFloat(l[5]) || 0);
+  });
+  const resumoAoa = [
+    ['Categoria', 'Total (R$)'],
+    ...Object.entries(porCat)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, val]) => [cat, val]),
+    [],
+    ['TOTAL', linhas.reduce((s, l) => s + (parseFloat(l[5]) || 0), 0)]
+  ];
+  const wsRes = XLSX.utils.aoa_to_sheet(resumoAoa);
+  wsRes['!cols'] = [{ wch: 22 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumo');
+
+  XLSX.writeFile(wb, `nautilus-${mesAno}.xlsx`);
+  showToast(`Excel exportado: nautilus-${mesAno}.xlsx`, 'verde');
+}
+
 /* === RECORRENTES === */
 function toggleValorVariavel() {
   const v = document.getElementById('rec-variavel')?.value==='sim';
@@ -1107,11 +1201,19 @@ function renderEmAberto() {
         color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px">
         ${opts}
       </select>
-      <div>
-        <span style="font-size:12px;color:var(--text3);margin-right:8px">
-          ${filtradas.length} transações</span>
-        <span class="mono" style="font-size:18px;color:var(--red);font-weight:700">
-          ${fmtBRL(total)}</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div>
+          <span style="font-size:12px;color:var(--text3);margin-right:8px">
+            ${filtradas.length} transações</span>
+          <span class="mono" style="font-size:18px;color:var(--red);font-weight:700">
+            ${fmtBRL(total)}</span>
+        </div>
+        <button onclick="exportarExcelMes('${_gcMesFiltro}','gc')"
+          title="Exportar mês em Excel"
+          style="background:rgba(48,209,88,0.15);color:var(--green);
+          border:1px solid rgba(48,209,88,0.3);border-radius:8px;
+          padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;
+          white-space:nowrap">⬇ Excel</button>
       </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
